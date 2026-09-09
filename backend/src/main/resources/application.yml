@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: user-management
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:sewa_ums}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        transport:
+          protocol: smtp
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+  error:
+    include-message: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+app:
+  jwt:
+    # Override in production. Must be at least 32 bytes for HS256.
+    secret: ${JWT_SECRET:change-this-super-secret-key-for-sewa-ums-jwt-signing-0123456789}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:480}
+    issuer: sewa-ums
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+  bootstrap:
+    # Creates default zones and an admin account on first start.
+    enabled: true
+    admin-username: admin
+    admin-password: ${ADMIN_PASSWORD:Admin@123}
+    admin-email: ${ADMIN_EMAIL:admin@sewa.local}
+  notification:
+    email:
+      enabled: ${EMAIL_ENABLED:false}
+      from: ${MAIL_FROM:no-reply@sewa.local}
+    whatsapp:
+      enabled: ${WHATSAPP_ENABLED:false}
+      # Meta WhatsApp Cloud API
+      api-url: ${WHATSAPP_API_URL:https://graph.facebook.com/v20.0}
+      phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+      access-token: ${WHATSAPP_ACCESS_TOKEN:}
+      default-country-code: ${WHATSAPP_COUNTRY_CODE:91}
+
+logging:
+  level:
+    com.user.management: INFO
+    org.springframework.security: WARN

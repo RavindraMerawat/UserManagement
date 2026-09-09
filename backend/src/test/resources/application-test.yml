@@ -1,0 +1,32 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:umstest;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  mail:
+    host: localhost
+    port: 3025
+
+app:
+  jwt:
+    secret: test-secret-key-for-unit-tests-only-0123456789abcdef
+    expiration-minutes: 60
+    issuer: sewa-ums
+  bootstrap:
+    enabled: false
+  notification:
+    email:
+      enabled: false
+    whatsapp:
+      enabled: false
+
+logging:
+  level:
+    org.hibernate.SQL: WARN

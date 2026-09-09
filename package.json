@@ -1,0 +1,16 @@
+{
+  "name": "user-management",
+  "private": true,
+  "version": "1.0.0",
+  "description": "React front end for the role based sewadar user management and attendance system. The Spring Boot backend is run from IntelliJ, not from here.",
+  "scripts": {
+    "setup": "npm install && npm --prefix frontend install",
+    "start": "npm --prefix frontend run dev",
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
