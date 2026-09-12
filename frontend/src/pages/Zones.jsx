@@ -68,6 +68,13 @@ export default function Zones() {
 
   return (
     <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Zones</h1>
+          <p className="page-sub">Zone master data. Every sewadar and every attendance record belongs to one.</p>
+        </div>
+      </div>
+
       <Alert kind="error" onClose={() => setError('')}>
         {error}
       </Alert>

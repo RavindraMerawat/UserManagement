@@ -181,6 +181,8 @@ public class AttendanceService {
         }
         attendance.setRemarks(remarks);
         attendance.setMarkedBy(currentUser.username());
+        // Same reason as in CheckInOutService: @PreUpdate runs too late for the DTO.
+        attendance.recalculateHours();
     }
 
     private Attendance getInScope(Long id) {

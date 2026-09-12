@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import Alert from '../components/Alert'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
-import { Badge, EmptyRow, Field, Pager } from '../components/Bits'
+import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
 
 export default function Requests() {
   const { isSewadar, canReviewRequests, user } = useAuth()
@@ -20,6 +20,7 @@ export default function Requests() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  const [counts, setCounts] = useState(null)
   const [raising, setRaising] = useState(false)
   const [reviewing, setReviewing] = useState(null)
 
@@ -39,6 +40,10 @@ export default function Requests() {
   }, [load])
 
   useEffect(() => {
+    requestApi.counts().then(setCounts).catch(() => setCounts(null))
+  }, [result])
+
+  useEffect(() => {
     zoneApi.list(false).then(setZones).catch(() => setZones([]))
     metaApi.options().then(setOptions).catch(() => {})
   }, [])
@@ -55,6 +60,27 @@ export default function Requests() {
 
   return (
     <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Request Management</h1>
+          <p className="page-sub">Manage leave, seva and other requests.</p>
+        </div>
+      </div>
+
+      <TabStrip
+        value={status}
+        onChange={(next) => {
+          setPage(0)
+          setStatus(next)
+        }}
+        tabs={[
+          { key: '', label: 'All', count: counts?.total },
+          { key: 'PENDING', label: 'Pending', count: counts?.byStatus?.pending },
+          { key: 'APPROVED', label: 'Approved', count: counts?.byStatus?.approved },
+          { key: 'REJECTED', label: 'Rejected', count: counts?.byStatus?.rejected },
+        ]}
+      />
+
       <Alert kind="error" onClose={() => setError('')}>
         {error}
       </Alert>
@@ -247,7 +273,7 @@ function RaiseDialog({ open, onClose, zones, isSewadar, onDone }) {
       await requestApi.create({
         sewadarId: isSewadar ? null : Number(form.sewadarId),
         toZoneId: Number(form.toZoneId),
-        reason: form.reason || null,
+        reason: form.reason.trim(),
       })
       setForm({ sewadarId: '', toZoneId: '', reason: '' })
       onDone('Zone change request raised. The office team has been notified.')
@@ -258,9 +284,13 @@ function RaiseDialog({ open, onClose, zones, isSewadar, onDone }) {
     }
   }
 
-  const currentZoneId = isSewadar
-    ? me?.zoneId
-    : sewadars.find((s) => String(s.id) === String(form.sewadarId))?.zoneId
+  const chosen = sewadars.find((s) => String(s.id) === String(form.sewadarId))
+  const currentZoneId = isSewadar ? me?.zoneId : chosen?.zoneId
+  const currentZoneName = isSewadar ? me?.zoneName : chosen?.zoneName
+
+  // Everywhere this sewadar could move to: every active zone except the one they
+  // are already in.
+  const targetZones = zones.filter((zone) => String(zone.id) !== String(currentZoneId))
 
   return (
     <Modal
@@ -304,6 +334,17 @@ function RaiseDialog({ open, onClose, zones, isSewadar, onDone }) {
           </Field>
         )}
 
+        {/*
+          Say where the sewadar is now. The move only makes sense as "from here to
+          there", and without this the form showed a new-zone list with nothing to
+          compare it against.
+        */}
+        {!isSewadar && form.sewadarId && (
+          <p className="callout" style={{ marginTop: 0 }}>
+            Currently in <strong>{currentZoneName || 'an unknown zone'}</strong>.
+          </p>
+        )}
+
         <Field label="Move to zone" required>
           <select
             value={form.toZoneId}
@@ -311,22 +352,34 @@ function RaiseDialog({ open, onClose, zones, isSewadar, onDone }) {
             required
           >
             <option value="">Select the new zone</option>
-            {zones
-              .filter((zone) => String(zone.id) !== String(currentZoneId))
-              .map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name}
-                </option>
-              ))}
+            {targetZones.map((zone) => (
+              <option key={zone.id} value={zone.id}>
+                {zone.name}
+              </option>
+            ))}
           </select>
+          {/* An empty dropdown looks broken. Say which of the two reasons it is. */}
+          {targetZones.length === 0 && (
+            <p className="photo-error">
+              {zones.length === 0
+                ? 'No active zones are set up yet. Add one under Setup.'
+                : 'There is no other active zone to move to.'}
+            </p>
+          )}
         </Field>
 
-        <Field label="Reason">
+        <Field label="Reason" required>
           <textarea
             value={form.reason}
             onChange={(e) => setForm({ ...form, reason: e.target.value })}
             placeholder="Shifted residence, sewa requirement, and so on"
+            maxLength={500}
+            required
           />
+          <p className="hint">
+            {/* Whoever reviews this has only the reason to go on. */}
+            Required - whoever reviews this decides on what you write here.
+          </p>
         </Field>
       </form>
     </Modal>

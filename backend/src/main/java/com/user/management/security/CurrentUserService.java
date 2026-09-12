@@ -67,6 +67,44 @@ public class CurrentUserService {
         };
     }
 
+    /**
+     * True when the caller may see a whole Aadhaar number rather than the masked
+     * {@code XXXX XXXX 9012} form.
+     *
+     * <p>Admin and Office Admin may, because they are the only roles that register
+     * and correct the number. A Sewadar may see their own, since it is theirs. Every
+     * other role - Co-ordinator, Zone Incharge, Supervisor, Office User - works from
+     * the badge number and gets the masked form, which is still enough to confirm a
+     * card in someone's hand.</p>
+     *
+     * @param sewadarId the record being read, or null when that is not known
+     */
+    public boolean canViewFullAadhar(Long sewadarId) {
+        return switch (role()) {
+            case ADMIN, OFFICE_ADMIN -> true;
+            case SEWADAR -> sewadarId != null && sewadarId.equals(principal().getSewadarId());
+            default -> false;
+        };
+    }
+
+    /**
+     * True when the role may issue a badge or record that one was collected.
+     *
+     * <p>Admin and Office Admin only. Co-ordinator, Zone Incharge and Supervisor can
+     * open the Badge Detail screen and look up anyone in their zones, but handing out
+     * a badge is an office action - so for them the screen is read only.</p>
+     *
+     * <p>Separate from {@link #canManageSewadars()} even though the two currently
+     * agree: they answer different questions, and one is likely to move without the
+     * other.</p>
+     */
+    public boolean canManageBadges() {
+        return switch (role()) {
+            case ADMIN, OFFICE_ADMIN -> true;
+            default -> false;
+        };
+    }
+
     /** True when the role may approve or reject a zone change request. */
     public boolean canReviewRequests() {
         return switch (role()) {

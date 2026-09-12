@@ -2,6 +2,7 @@ package com.user.management.controller;
 
 import com.user.management.entity.RequestStatus;
 import com.user.management.model.PageResponse;
+import com.user.management.model.TabCountsResponse;
 import com.user.management.model.ZoneChangeCreateRequest;
 import com.user.management.model.ZoneChangeRequestResponse;
 import com.user.management.model.ZoneChangeReviewRequest;
@@ -45,6 +46,13 @@ public class ZoneChangeRequestController {
         Pageable pageable = PageRequest.of(page, Math.min(size, 200),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
         return requestService.search(status, pageable);
+    }
+
+    @Operation(summary = "Counts for the list tabs",
+            description = "All, pending, approved and rejected in your scope.")
+    @GetMapping("/counts")
+    public TabCountsResponse counts() {
+        return requestService.tabCounts();
     }
 
     @Operation(summary = "Get one request")

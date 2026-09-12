@@ -64,12 +64,19 @@ public class ZoneService {
 
     @Transactional
     public ZoneResponse create(ZoneRequest request) {
-        if (zoneRepository.existsByCodeIgnoreCase(request.code())) {
-            throw new BadRequestException("A zone with code " + request.code() + " already exists");
+        String code = request.code().trim();
+        String name = request.name().trim();
+        if (zoneRepository.existsByCodeIgnoreCase(code)) {
+            throw new BadRequestException("A zone with code " + code + " already exists");
+        }
+        // Two zones with the same name are as confusing as two with the same code -
+        // every picker in the application shows the name, not the code.
+        if (zoneRepository.existsByNameIgnoreCase(name)) {
+            throw new BadRequestException("A zone called " + name + " already exists");
         }
         Zone zone = Zone.builder()
-                .code(request.code().trim())
-                .name(request.name().trim())
+                .code(code)
+                .name(name)
                 .description(request.description())
                 .centre(request.centre())
                 .active(request.active() == null || request.active())
@@ -80,12 +87,16 @@ public class ZoneService {
     @Transactional
     public ZoneResponse update(Long id, ZoneRequest request) {
         Zone zone = getEntity(id);
-        if (!zone.getCode().equalsIgnoreCase(request.code())
-                && zoneRepository.existsByCodeIgnoreCase(request.code())) {
-            throw new BadRequestException("A zone with code " + request.code() + " already exists");
+        String code = request.code().trim();
+        String name = request.name().trim();
+        if (!zone.getCode().equalsIgnoreCase(code) && zoneRepository.existsByCodeIgnoreCase(code)) {
+            throw new BadRequestException("A zone with code " + code + " already exists");
         }
-        zone.setCode(request.code().trim());
-        zone.setName(request.name().trim());
+        if (!zone.getName().equalsIgnoreCase(name) && zoneRepository.existsByNameIgnoreCase(name)) {
+            throw new BadRequestException("A zone called " + name + " already exists");
+        }
+        zone.setCode(code);
+        zone.setName(name);
         zone.setDescription(request.description());
         zone.setCentre(request.centre());
         if (request.active() != null) {

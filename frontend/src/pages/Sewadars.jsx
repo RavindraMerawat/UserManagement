@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { metaApi, sewadarApi, zoneApi } from '../api/endpoints'
+import { metaApi, setupApi, sewadarApi, zoneApi } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import Alert from '../components/Alert'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
-import { Badge, EmptyRow, Field, Pager } from '../components/Bits'
+import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
+import { Avatar, PhotoPicker } from '../components/Photo'
 
 const EMPTY_FORM = {
   badgeNumber: '',
+  badgeReceived: false,
   // registration fields, in the order they appear on the form
   name: '',
   fatherOrHusbandName: '',
@@ -36,8 +38,14 @@ const EMPTY_FORM = {
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
 
 /** Formats a stored 12 digit Aadhaar as 1234 5678 9012 for reading. */
+/**
+ * Groups the digits in fours for reading. A value the server masked for this role
+ * already arrives display-ready as `XXXX XXXX 9012`, and stripping non-digits from it
+ * would leave just the last four, so it is passed straight through.
+ */
 function formatAadhar(value) {
   if (!value) return ''
+  if (/[Xx]/.test(value)) return value
   const digits = value.replace(/[^0-9]/g, '')
   return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
 }
@@ -49,6 +57,9 @@ export default function Sewadars() {
   const [page, setPage] = useState(0)
   const [result, setResult] = useState(null)
   const [zones, setZones] = useState([])
+  const [areas, setAreas] = useState([])
+  const [points, setPoints] = useState([])
+  const [counts, setCounts] = useState(null)
   const [options, setOptions] = useState({ genders: [], sewaTypes: [] })
 
   const [loading, setLoading] = useState(true)
@@ -61,6 +72,9 @@ export default function Sewadars() {
   const [formError, setFormError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [viewing, setViewing] = useState(null)
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoError, setPhotoError] = useState('')
 
   const params = useMemo(
     () => ({
@@ -89,21 +103,39 @@ export default function Sewadars() {
   useEffect(() => {
     zoneApi.list(true).then(setZones).catch(() => setZones([]))
     metaApi.options().then(setOptions).catch(() => {})
-  }, [])
+    // The Setup lists behind the Area and Point pickers. Only the active ones - a
+    // retired area should not be offered for a new record - and only for the roles
+    // that can open the form at all, since Setup is theirs.
+    if (canManageSewadars) {
+      setupApi.areas({ active: true }).then(setAreas).catch(() => setAreas([]))
+      setupApi.points({ active: true }).then(setPoints).catch(() => setPoints([]))
+    }
+  }, [canManageSewadars])
+
+  // The tab numbers are reloaded whenever the list is, so adding or deactivating
+  // a sewadar moves the counts at the same moment it moves the rows.
+  useEffect(() => {
+    sewadarApi.counts().then(setCounts).catch(() => setCounts(null))
+  }, [result])
 
   const openCreate = () => {
     setFormError('')
     setShowExtras(false)
+    setPhotoFile(null)
+    setPhotoError('')
     setEditing({ ...EMPTY_FORM, zoneId: zones[0]?.id ?? '' })
   }
 
   const openEdit = (row) => {
     setFormError('')
     setShowExtras(false)
+    setPhotoFile(null)
+    setPhotoError('')
     // Null columns come back as undefined, which React would treat as uncontrolled.
     setEditing({
       id: row.id,
       badgeNumber: row.badgeNumber || '',
+      badgeReceived: Boolean(row.badgeReceived),
       name: row.name || '',
       fatherOrHusbandName: row.fatherOrHusbandName || '',
       dateOfBirth: row.dateOfBirth || '',
@@ -126,6 +158,7 @@ export default function Sewadars() {
       loginUsername: '',
       hasLogin: row.hasLogin,
       existingLogin: row.loginUsername,
+      photoUpdatedAt: row.photoUpdatedAt,
     })
   }
 
@@ -147,15 +180,28 @@ export default function Sewadars() {
     }
     delete payload.hasLogin
     delete payload.existingLogin
+    delete payload.photoUpdatedAt
 
     try {
-      if (editing.id) {
-        await sewadarApi.update(editing.id, payload)
-        setNotice(`${payload.name} updated`)
-      } else {
-        await sewadarApi.create(payload)
-        setNotice(`${payload.name} added`)
+      // A new record has no id until it is saved, so the chosen photo is uploaded
+      // straight after the create rather than as part of it.
+      const saved = editing.id
+        ? await sewadarApi.update(editing.id, payload)
+        : await sewadarApi.create(payload)
+
+      if (photoFile) {
+        try {
+          await sewadarApi.photo.upload(saved.id, photoFile)
+        } catch (photoErr) {
+          setNotice(`${payload.name} saved, but the photo failed: ${errorMessage(photoErr)}`)
+          setEditing(null)
+          setPhotoFile(null)
+          load()
+          return
+        }
       }
+      setNotice(`${payload.name} ${editing.id ? 'updated' : 'added'}`)
+      setPhotoFile(null)
       setEditing(null)
       load()
     } catch (err) {
@@ -184,14 +230,57 @@ export default function Sewadars() {
     setEditing((current) => ({ ...current, [key]: value }))
   }
 
+  // Digits only, and never more than ten - the server enforces the same rule, this
+  // just means a wrong number cannot be typed in the first place.
+  const onMobileChange = (event) => {
+    const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 10)
+    setEditing((current) => ({ ...current, mobile: digits }))
+  }
+
   // Aadhaar is typed as digits but shown in groups of four.
   const onAadharChange = (event) => {
     const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 12)
     setEditing((current) => ({ ...current, aadharNumber: digits }))
   }
 
+  // Narrow the pickers to what sits under the current selection.
+  const zoneAreas = areas.filter((area) => String(area.zoneId) === String(editing?.zoneId))
+  const areaPoints = points.filter((point) => point.areaName === editing?.area)
+
+  /*
+   * A record may already name an area or point that is not in the Setup list - one
+   * typed before the lists existed, or since retired. Keeping the current value as an
+   * option means opening the form does not silently blank it. The startup backfill
+   * seeds the lists from existing records, so this is the safety net rather than the
+   * mechanism.
+   */
+  const withCurrent = (list, current) =>
+    current && !list.some((item) => item.name === current)
+      ? [{ id: `current:${current}`, name: current }, ...list]
+      : list
+
   return (
     <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Sewadar Management</h1>
+          <p className="page-sub">Manage your sewadar list, details and seva assignments.</p>
+        </div>
+      </div>
+
+      <TabStrip
+        value={filters.active}
+        onChange={(next) => {
+          setPage(0)
+          setFilters((f) => ({ ...f, active: next }))
+        }}
+        tabs={[
+          { key: '', label: 'All', count: counts?.total },
+          { key: 'true', label: 'Active', count: counts?.byStatus?.active },
+          { key: 'false', label: 'Inactive', count: counts?.byStatus?.inactive },
+        ]}
+      />
+
       <Alert kind="error" onClose={() => setError('')}>
         {error}
       </Alert>
@@ -261,15 +350,14 @@ export default function Sewadars() {
               <table>
                 <thead>
                   <tr>
-                    <th>Badge</th>
+                    <th>Badge No</th>
+                    <th style={{ width: 62 }}>Photo</th>
                     <th>Name</th>
                     <th>F/H Name</th>
-                    <th>Birth Date</th>
                     <th>Mobile No</th>
                     <th>Zone</th>
-                    <th>Area</th>
-                    <th>Center / Point</th>
-                    <th>Blood Group</th>
+                    <th>Area / Point</th>
+                    <th>Aadhaar Card</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -280,6 +368,15 @@ export default function Sewadars() {
                       <tr key={row.id}>
                         <td>{row.badgeNumber}</td>
                         <td>
+                          <Avatar
+                            kind="sewadars"
+                            id={row.id}
+                            stamp={row.photoUpdatedAt}
+                            name={row.name}
+                            size={36}
+                          />
+                        </td>
+                        <td>
                           {row.name}
                           {row.hasLogin && (
                             <div className="muted" style={{ fontSize: 11.5 }}>
@@ -288,12 +385,10 @@ export default function Sewadars() {
                           )}
                         </td>
                         <td>{row.fatherOrHusbandName || '-'}</td>
-                        <td>{row.dateOfBirth || '-'}</td>
                         <td>{row.mobile || '-'}</td>
                         <td>{row.zoneName}</td>
-                        <td>{row.area || '-'}</td>
-                        <td>{row.centerPoint || '-'}</td>
-                        <td>{row.bloodGroup || '-'}</td>
+                        <td>{[row.area, row.centerPoint].filter(Boolean).join(' / ') || '-'}</td>
+                        <td>{formatAadhar(row.aadharNumber) || '-'}</td>
                         <td>
                           <Badge
                             value={row.active ? 'active' : 'inactive'}
@@ -332,7 +427,7 @@ export default function Sewadars() {
                       </tr>
                     ))
                   ) : (
-                    <EmptyRow colSpan={11}>No sewadars match these filters</EmptyRow>
+                    <EmptyRow colSpan={10}>No sewadars match these filters</EmptyRow>
                   )}
                 </tbody>
               </table>
@@ -369,6 +464,43 @@ export default function Sewadars() {
           <form id="sewadar-form" onSubmit={onSave}>
             <Alert kind="error">{formError}</Alert>
 
+            <PhotoPicker
+              onReject={setPhotoError}
+              kind="sewadars"
+              id={editing.id}
+              stamp={editing.photoUpdatedAt}
+              name={editing.name}
+              file={photoFile}
+              onPick={setPhotoFile}
+              busy={photoBusy}
+              error={photoError}
+              onUpload={async (chosen) => {
+                setPhotoBusy(true)
+                setPhotoError('')
+                try {
+                  const updated = await sewadarApi.photo.upload(editing.id, chosen)
+                  setEditing((cur) => ({ ...cur, photoUpdatedAt: updated.photoUpdatedAt }))
+                  load()
+                } catch (err) {
+                  setPhotoError(errorMessage(err, 'Upload failed'))
+                } finally {
+                  setPhotoBusy(false)
+                }
+              }}
+              onRemove={async () => {
+                setPhotoBusy(true)
+                try {
+                  await sewadarApi.photo.remove(editing.id)
+                  setEditing((cur) => ({ ...cur, photoUpdatedAt: null }))
+                  load()
+                } catch (err) {
+                  setPhotoError(errorMessage(err, 'Could not remove the photo'))
+                } finally {
+                  setPhotoBusy(false)
+                }
+              }}
+            />
+
             <Field label="Badge Number" required>
               <input
                 value={editing.badgeNumber}
@@ -387,14 +519,6 @@ export default function Sewadars() {
                 <input value={editing.name} onChange={set('name')} required />
               </Field>
 
-              <Field label="F/H Name">
-                <input
-                  value={editing.fatherOrHusbandName}
-                  onChange={set('fatherOrHusbandName')}
-                  placeholder="Father or husband name"
-                />
-              </Field>
-
               <Field label="Birth Date">
                 <input
                   type="date"
@@ -405,7 +529,29 @@ export default function Sewadars() {
               </Field>
 
               <Field label="Mobile No">
-                <input value={editing.mobile} onChange={set('mobile')} placeholder="9876543210" />
+                <input
+                  value={editing.mobile}
+                  onChange={onMobileChange}
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="9876543210"
+                />
+                {editing.mobile && editing.mobile.length !== 10 && (
+                  <p className="photo-error">A mobile number is 10 digits.</p>
+                )}
+              </Field>
+
+              <Field label="Email">
+                <input type="email" value={editing.email} onChange={set('email')} />
+              </Field>
+
+              <Field label="Aadhaar No">
+                <input
+                  value={formatAadhar(editing.aadharNumber)}
+                  onChange={onAadharChange}
+                  inputMode="numeric"
+                  placeholder="1234 5678 9012"
+                />
               </Field>
 
               <Field label="Zone" required>
@@ -419,15 +565,6 @@ export default function Sewadars() {
                 </select>
               </Field>
 
-              <Field label="Aadhaar No">
-                <input
-                  value={formatAadhar(editing.aadharNumber)}
-                  onChange={onAadharChange}
-                  inputMode="numeric"
-                  placeholder="1234 5678 9012"
-                />
-              </Field>
-
               <Field label="Blood Group">
                 <select value={editing.bloodGroup} onChange={set('bloodGroup')}>
                   <option value="">Not set</option>
@@ -439,16 +576,44 @@ export default function Sewadars() {
                 </select>
               </Field>
 
+              {/*
+                Area and Point come from Setup rather than being typed, so the same
+                place is not recorded three different ways. Both are narrowed by what
+                is above them: areas by the chosen zone, points by the chosen area.
+              */}
               <Field label="Area">
-                <input value={editing.area} onChange={set('area')} placeholder="Sector 12" />
+                <select
+                  value={editing.area}
+                  onChange={(e) => setEditing((c) => ({ ...c, area: e.target.value, centerPoint: '' }))}
+                >
+                  <option value="">Not set</option>
+                  {withCurrent(zoneAreas, editing.area).map((area) => (
+                    <option key={area.id} value={area.name}>
+                      {area.name}
+                    </option>
+                  ))}
+                </select>
+                {editing.zoneId && zoneAreas.length === 0 && (
+                  <p className="hint">No areas set up for this zone yet. Add one under Setup.</p>
+                )}
               </Field>
 
-              <Field label="Center / Point">
-                <input
+              <Field label="Satsang Point">
+                <select
                   value={editing.centerPoint}
                   onChange={set('centerPoint')}
-                  placeholder="Main Center"
-                />
+                  disabled={!editing.area}
+                >
+                  <option value="">{editing.area ? 'Not set' : 'Choose an area first'}</option>
+                  {withCurrent(areaPoints, editing.centerPoint).map((point) => (
+                    <option key={point.id} value={point.name}>
+                      {point.name}
+                    </option>
+                  ))}
+                </select>
+                {editing.area && areaPoints.length === 0 && (
+                  <p className="hint">No satsang points set up for this area yet.</p>
+                )}
               </Field>
 
               <Field label="Address" wide>
@@ -469,6 +634,9 @@ export default function Sewadars() {
 
             {showExtras && (
               <div className="form-grid" style={{ marginTop: 14 }}>
+                <Field label="F/H Name">
+                  <input value={editing.fatherOrHusbandName} onChange={set('fatherOrHusbandName')} placeholder="Father or husband name" />
+                </Field>
                 <Field label="Department / sewa group">
                   <input value={editing.department} onChange={set('department')} />
                 </Field>
@@ -492,9 +660,6 @@ export default function Sewadars() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Email">
-                  <input type="email" value={editing.email} onChange={set('email')} />
-                </Field>
                 <Field label="City">
                   <input value={editing.city} onChange={set('city')} />
                 </Field>
@@ -511,6 +676,10 @@ export default function Sewadars() {
               <label className="checkline">
                 <input type="checkbox" checked={editing.active} onChange={set('active')} />
                 Active sewadar
+              </label>
+              <label className="checkline">
+                <input type="checkbox" checked={editing.badgeReceived} onChange={set('badgeReceived')} />
+                Badge received by sewadar
               </label>
 
               {editing.hasLogin ? (
@@ -572,41 +741,85 @@ export default function Sewadars() {
         }
       >
         {viewing && (
-          <dl className="kv">
-            <dt>Badge Number</dt>
-            <dd>{viewing.badgeNumber}</dd>
-            <dt>Name</dt>
-            <dd>{viewing.name}</dd>
-            <dt>F/H Name</dt>
-            <dd>{viewing.fatherOrHusbandName || '-'}</dd>
-            <dt>Birth Date</dt>
-            <dd>{viewing.dateOfBirth || '-'}</dd>
-            <dt>Mobile No</dt>
-            <dd>{viewing.mobile || '-'}</dd>
-            <dt>Zone</dt>
-            <dd>{viewing.zoneName}</dd>
-            <dt>Address</dt>
-            <dd style={{ whiteSpace: 'pre-wrap' }}>{viewing.address || '-'}</dd>
-            <dt>Aadhaar No</dt>
-            <dd>{formatAadhar(viewing.aadharNumber) || '-'}</dd>
-            <dt>Blood Group</dt>
-            <dd>{viewing.bloodGroup || '-'}</dd>
-            <dt>Area</dt>
-            <dd>{viewing.area || '-'}</dd>
-            <dt>Center / Point</dt>
-            <dd>{viewing.centerPoint || '-'}</dd>
-            <dt>Department</dt>
-            <dd>{viewing.department || '-'}</dd>
-            <dt>Primary sewa</dt>
-            <dd>{viewing.primarySewaType?.replace(/_/g, ' ') || '-'}</dd>
-            <dt>Status</dt>
-            <dd>
-              <Badge
-                value={viewing.active ? 'active' : 'inactive'}
-                label={viewing.active ? 'Active' : 'Inactive'}
+          <div className="view-doc">
+            <div className="view-head">
+              <Avatar
+                kind="sewadars"
+                id={viewing.id}
+                stamp={viewing.photoUpdatedAt}
+                name={viewing.name}
+                size={88}
+                square
               />
-            </dd>
-          </dl>
+              <div>
+                <h3 className="view-name">{viewing.name}</h3>
+                <p className="view-meta">
+                  {viewing.badgeNumber} &middot; {viewing.zoneName}
+                </p>
+                <Badge
+                  value={viewing.active ? 'active' : 'inactive'}
+                  label={viewing.active ? 'Active' : 'Inactive'}
+                />
+              </div>
+            </div>
+
+            <h4 className="view-section">Registration details</h4>
+            <dl className="kv">
+              <dt>Badge No</dt>
+              <dd>{viewing.badgeNumber}</dd>
+              <dt>Name</dt>
+              <dd>{viewing.name}</dd>
+              <dt>Birth Date</dt>
+              <dd>{viewing.dateOfBirth || '-'}</dd>
+              <dt>Mobile No</dt>
+              <dd>{viewing.mobile || '-'}</dd>
+              <dt>Email</dt>
+              <dd>{viewing.email || '-'}</dd>
+              <dt>Aadhaar No</dt>
+              <dd>
+                {formatAadhar(viewing.aadharNumber) || '-'}
+                {viewing.aadharMasked && <span className="muted"> - hidden for your role</span>}
+              </dd>
+              <dt>Zone</dt>
+              <dd>{viewing.zoneName}</dd>
+              <dt>Blood Group</dt>
+              <dd>{viewing.bloodGroup || '-'}</dd>
+              <dt>Area</dt>
+              <dd>{viewing.area || '-'}</dd>
+              <dt>Point</dt>
+              <dd>{viewing.centerPoint || '-'}</dd>
+              <dt>Address</dt>
+              <dd style={{ whiteSpace: 'pre-wrap' }}>{viewing.address || '-'}</dd>
+            </dl>
+
+            <h4 className="view-section">Sewa and contact</h4>
+            <dl className="kv">
+              <dt>F/H Name</dt>
+              <dd>{viewing.fatherOrHusbandName || '-'}</dd>
+              <dt>Department</dt>
+              <dd>{viewing.department || '-'}</dd>
+              <dt>Primary sewa</dt>
+              <dd>{viewing.primarySewaType?.replace(/_/g, ' ') || '-'}</dd>
+              <dt>Gender</dt>
+              <dd>{viewing.gender ? viewing.gender[0] + viewing.gender.slice(1).toLowerCase() : '-'}</dd>
+              <dt>City</dt>
+              <dd>{viewing.city || '-'}</dd>
+              <dt>Pincode</dt>
+              <dd>{viewing.pincode || '-'}</dd>
+              <dt>Joining date</dt>
+              <dd>{viewing.joiningDate || '-'}</dd>
+            </dl>
+
+            <h4 className="view-section">Login</h4>
+            <dl className="kv">
+              <dt>Has login</dt>
+              <dd>{viewing.hasLogin ? 'Yes' : 'No'}</dd>
+              <dt>Username</dt>
+              <dd>{viewing.loginUsername || '-'}</dd>
+              <dt>Photo on file</dt>
+              <dd>{viewing.hasPhoto ? 'Yes' : 'No'}</dd>
+            </dl>
+          </div>
         )}
       </Modal>
 

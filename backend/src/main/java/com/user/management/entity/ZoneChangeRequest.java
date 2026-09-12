@@ -13,7 +13,7 @@ import java.time.Instant;
 @Entity
 @Table(name = "zone_change_requests", indexes = {
         @Index(name = "idx_zcr_status", columnList = "status"),
-        @Index(name = "idx_zcr_sewadar", columnList = "sewadar_id")
+        @Index(name = "idx_zcr_sewadar", columnList = "sewadarId")
 })
 @Getter
 @Setter
@@ -28,17 +28,17 @@ public class ZoneChangeRequest extends Auditable {
 
     @NotNull
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "sewadar_id", nullable = false)
+    @JoinColumn(name = "sewadarId", nullable = false)
     private Sewadar sewadar;
 
     @NotNull
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "from_zone_id", nullable = false)
+    @JoinColumn(name = "fromZoneId", nullable = false)
     private Zone fromZone;
 
     @NotNull
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "to_zone_id", nullable = false)
+    @JoinColumn(name = "toZoneId", nullable = false)
     private Zone toZone;
 
     @Column(length = 500)
@@ -50,15 +50,15 @@ public class ZoneChangeRequest extends Auditable {
     @Column(nullable = false, length = 20)
     private RequestStatus status = RequestStatus.PENDING;
 
-    @Column(name = "requested_by", length = 60)
+    @Column(name = "requestedBy", length = 60)
     private String requestedBy;
 
-    @Column(name = "reviewed_by", length = 60)
+    @Column(name = "reviewedBy", length = 60)
     private String reviewedBy;
 
-    @Column(name = "reviewed_at")
+    @Column(name = "reviewedAt")
     private Instant reviewedAt;
 
-    @Column(name = "review_remarks", length = 500)
+    @Column(name = "reviewRemarks", length = 500)
     private String reviewRemarks;
 }

@@ -20,13 +20,17 @@ export const ZONE_SCOPED_ROLES = ['COORDINATOR', 'ZONE_INCHARGE', 'SUPERVISOR']
 
 export const SCREEN_ROLES = {
   HOME: EVERYONE,
-  ABOUT: EVERYONE,
+  BADGES: EVERYONE,
   SEWADAR: EVERYONE.filter((role) => role !== 'SEWADAR'),
   ATTENDANCE: EVERYONE,
   REPORT: EVERYONE,
   REQUEST: EVERYONE,
+  // Setup and User Account belong to the office pair, here and on the server.
+  SETUP: ['ADMIN', 'OFFICE_ADMIN'],
   ZONES: ['ADMIN', 'OFFICE_ADMIN'],
-  USERS: ['ADMIN'],
+  // Account administration is Admin and Office Admin. The server decides; this
+  // only keeps the menu and the route guard in step with it.
+  USERS: ['ADMIN', 'OFFICE_ADMIN'],
   CONTACT: EVERYONE,
 }
 
@@ -97,6 +101,9 @@ export function AuthProvider({ children }) {
       can: (screen) => (SCREEN_ROLES[screen] || []).includes(role),
       /** Add, edit and delete on sewadar master data. */
       canManageSewadars: ['ADMIN', 'OFFICE_ADMIN'].includes(role),
+      // Issuing and collecting a badge is an office action. The zone roles can
+      // open Badge Detail and look anyone up, but for them it is read only.
+      canManageBadges: ['ADMIN', 'OFFICE_ADMIN'].includes(role),
       /** Mark and update attendance. */
       canMarkAttendance: ['ADMIN', 'OFFICE_ADMIN', 'COORDINATOR', 'ZONE_INCHARGE', 'SUPERVISOR'].includes(
         role,

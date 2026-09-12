@@ -12,5 +12,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "lucide-react": "^1.45.0"
   }
 }

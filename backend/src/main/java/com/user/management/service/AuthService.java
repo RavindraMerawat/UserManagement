@@ -66,6 +66,8 @@ public class AuthService {
                 user.getZones().stream().map(Zone::getName).toList(),
                 principal.getSewadarId(),
                 principal.isMustChangePassword(),
+                user.getPhotoUpdatedAt() != null,
+                user.getPhotoUpdatedAt(),
                 menuFor(principal.getRole()));
     }
 
@@ -89,6 +91,8 @@ public class AuthService {
                 user.getZones().stream().map(Zone::getName).toList(),
                 principal.getSewadarId(),
                 principal.isMustChangePassword(),
+                user.getPhotoUpdatedAt() != null,
+                user.getPhotoUpdatedAt(),
                 menuFor(principal.getRole()));
     }
 
@@ -118,15 +122,16 @@ public class AuthService {
      */
     public List<String> menuFor(Role role) {
         return switch (role) {
-            case ADMIN -> List.of("HOME", "ABOUT", "SEWADAR", "ATTENDANCE", "REPORT", "REQUEST", "USERS",
-                    "ZONES", "CONTACT");
-            case OFFICE_ADMIN -> List.of("HOME", "ABOUT", "SEWADAR", "ATTENDANCE", "REPORT", "REQUEST",
-                    "ZONES", "CONTACT");
-            case COORDINATOR, ZONE_INCHARGE, SUPERVISOR -> List.of("HOME", "ABOUT", "SEWADAR",
-                    "ATTENDANCE", "REPORT", "REQUEST", "CONTACT");
-            case OFFICE_USER -> List.of("HOME", "ABOUT", "SEWADAR", "ATTENDANCE", "REPORT", "REQUEST",
-                    "CONTACT");
-            case SEWADAR -> List.of("HOME", "ABOUT", "ATTENDANCE", "REPORT", "REQUEST", "CONTACT");
+            // Listed in the order the sidebar draws them, so the two stay in step.
+            case ADMIN -> List.of("HOME", "SEWADAR", "ATTENDANCE", "BADGES", "REPORT", "REQUEST",
+                    "USERS", "SETUP", "CONTACT");
+            case OFFICE_ADMIN -> List.of("HOME", "SEWADAR", "ATTENDANCE", "BADGES", "REPORT", "REQUEST",
+                    "USERS", "SETUP", "CONTACT");
+            case COORDINATOR, ZONE_INCHARGE, SUPERVISOR -> List.of("HOME", "SEWADAR", "ATTENDANCE",
+                    "BADGES", "REPORT", "REQUEST", "CONTACT");
+            case OFFICE_USER -> List.of("HOME", "SEWADAR", "ATTENDANCE", "BADGES", "REPORT",
+                    "REQUEST", "CONTACT");
+            case SEWADAR -> List.of("HOME", "ATTENDANCE", "BADGES", "REPORT", "REQUEST", "CONTACT");
         };
     }
 }

@@ -15,7 +15,8 @@ import java.util.Set;
  */
 @Entity
 @Table(name = "users", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_user_username", columnNames = "username")
+        @UniqueConstraint(name = "uk_user_username", columnNames = "username"),
+        @UniqueConstraint(name = "uk_user_email", columnNames = "emailId")
 })
 @Getter
 @Setter
@@ -33,18 +34,18 @@ public class User extends Auditable {
     private String username;
 
     @NotBlank
-    @Column(name = "password_hash", nullable = false, length = 100)
+    @Column(name = "passwordHash", nullable = false, length = 100)
     private String passwordHash;
 
     @NotBlank
-    @Column(name = "full_name", nullable = false, length = 150)
+    @Column(name = "fullName", nullable = false, length = 150)
     private String fullName;
 
     @Email
-    @Column(length = 150)
+    @Column(name = "emailId", length = 150)
     private String email;
 
-    @Column(length = 20)
+    @Column(name = "mobileNo", length = 20)
     private String mobile;
 
     @Enumerated(EnumType.STRING)
@@ -58,8 +59,8 @@ public class User extends Auditable {
     @Builder.Default
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_zones",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "zone_id"))
+            joinColumns = @JoinColumn(name = "userId"),
+            inverseJoinColumns = @JoinColumn(name = "zoneId"))
     private Set<Zone> zones = new LinkedHashSet<>();
 
     @Builder.Default
@@ -68,11 +69,15 @@ public class User extends Auditable {
 
     /** Forces a password change on next login when true. */
     @Builder.Default
-    @Column(name = "must_change_password", nullable = false)
+    @Column(name = "mustChangePassword", nullable = false)
     private boolean mustChangePassword = false;
 
-    @Column(name = "last_login_at")
+    @Column(name = "lastLoginAt")
     private Instant lastLoginAt;
+
+    /** When the account photo was last uploaded, or null if there is none. */
+    @Column(name = "photoUpdatedAt")
+    private Instant photoUpdatedAt;
 
     public void addZone(Zone zone) {
         this.zones.add(zone);

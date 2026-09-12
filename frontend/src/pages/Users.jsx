@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { metaApi, sewadarApi, userApi, zoneApi } from '../api/endpoints'
+import { metaApi, sewadarApi, userApi, userApiPhoto, zoneApi } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import Alert from '../components/Alert'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
-import { Badge, EmptyRow, Field, Pager } from '../components/Bits'
-import { ZONE_SCOPED_ROLES } from '../auth/AuthContext'
+import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
+import { Avatar, PhotoPicker } from '../components/Photo'
+import { useAuth, ZONE_SCOPED_ROLES } from '../auth/AuthContext'
 
 // Single source of truth, shared with the route guards.
 const ZONE_SCOPED = ZONE_SCOPED_ROLES
@@ -22,8 +23,13 @@ const EMPTY = {
   mustChangePassword: true,
 }
 
+/** Digits only, never more than ten - the same rule the server enforces. */
+const digitsOnly = (value) => value.replace(/[^0-9]/g, '').slice(0, 10)
+
 export default function Users() {
-  const [filters, setFilters] = useState({ query: '', role: '' })
+  const { user, refresh } = useAuth()
+  const [filters, setFilters] = useState({ query: '', role: '', enabled: '' })
+  const [counts, setCounts] = useState(null)
   const [page, setPage] = useState(0)
   const [result, setResult] = useState(null)
   const [zones, setZones] = useState([])
@@ -38,9 +44,19 @@ export default function Users() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [viewing, setViewing] = useState(null)
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoError, setPhotoError] = useState('')
 
   const params = useMemo(
-    () => ({ query: filters.query || undefined, role: filters.role || undefined, page, size: 20 }),
+    () => ({
+      query: filters.query || undefined,
+      role: filters.role || undefined,
+      enabled: filters.enabled === '' ? undefined : filters.enabled === 'true',
+      page,
+      size: 20,
+    }),
     [filters, page],
   )
 
@@ -62,6 +78,12 @@ export default function Users() {
     metaApi.options().then(setOptions).catch(() => {})
   }, [])
 
+  // Reloaded with the list, so creating or disabling an account moves the tab
+  // numbers at the same moment it moves the rows.
+  useEffect(() => {
+    userApi.counts().then(setCounts).catch(() => setCounts(null))
+  }, [result])
+
   // Sewadar accounts have to be linked to a sewadar record, so load the ones without a login.
   useEffect(() => {
     if (creating?.role !== 'SEWADAR') return
@@ -76,11 +98,25 @@ export default function Users() {
     setFormError('')
     setSaving(true)
     try {
-      await userApi.create({
+      const saved = await userApi.create({
         ...creating,
         zoneIds: ZONE_SCOPED.includes(creating.role) ? creating.zoneIds.map(Number) : [],
         sewadarId: creating.role === 'SEWADAR' ? Number(creating.sewadarId) : null,
       })
+      if (photoFile) {
+        try {
+          await userApiPhoto.upload(saved.id, photoFile)
+        } catch (photoErr) {
+          setNotice(
+            `Account ${creating.username} created, but the photo failed: ${errorMessage(photoErr)}`,
+          )
+          setCreating(null)
+          setPhotoFile(null)
+          load()
+          return
+        }
+      }
+      setPhotoFile(null)
       setNotice(`Account ${creating.username} created`)
       setCreating(null)
       load()
@@ -105,7 +141,35 @@ export default function Users() {
         enabled: editing.enabled,
         newPassword: editing.newPassword || null,
       })
+      /*
+       * The photo goes with the save, not on pick. It is sent after the field update
+       * so a rejected image cannot roll back details that were already correct - and
+       * if it does fail, the message says the details were saved, because they were.
+       */
+      if (photoFile) {
+        try {
+          await userApiPhoto.upload(editing.id, photoFile)
+        } catch (photoErr) {
+          setFormError(
+            `Details saved, but the photo did not upload: ${errorMessage(photoErr, 'upload failed')}`,
+          )
+          setPhotoFile(null)
+          load()
+          return
+        }
+      }
+
+      /*
+       * Editing your own account changes what the topbar shows - the name beside
+       * the photo, and the photo itself. Re-read the session so the shell follows,
+       * instead of holding the old one until the next full page load.
+       */
+      if (editing.id === user?.userId) {
+        refresh().catch(() => {})
+      }
+
       setNotice(`Account ${editing.username} updated`)
+      setPhotoFile(null)
       setEditing(null)
       load()
     } catch (err) {
@@ -135,6 +199,26 @@ export default function Users() {
 
   return (
     <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">User Account Management</h1>
+          <p className="page-sub">Manage system users and their roles.</p>
+        </div>
+      </div>
+
+      <TabStrip
+        value={filters.enabled}
+        onChange={(next) => {
+          setPage(0)
+          setFilters((f) => ({ ...f, enabled: next }))
+        }}
+        tabs={[
+          { key: '', label: 'All Users', count: counts?.total },
+          { key: 'true', label: 'Active', count: counts?.byStatus?.active },
+          { key: 'false', label: 'Inactive', count: counts?.byStatus?.inactive },
+        ]}
+      />
+
       <Alert kind="error" onClose={() => setError('')}>
         {error}
       </Alert>
@@ -150,6 +234,8 @@ export default function Users() {
             className="btn"
             onClick={() => {
               setFormError('')
+              setPhotoFile(null)
+              setPhotoError('')
               setCreating({ ...EMPTY })
             }}
           >
@@ -195,6 +281,7 @@ export default function Users() {
               <table>
                 <thead>
                   <tr>
+                    <th style={{ width: 62 }}>Photo</th>
                     <th>Username</th>
                     <th>Name</th>
                     <th>Role</th>
@@ -209,6 +296,15 @@ export default function Users() {
                   {result?.content?.length ? (
                     result.content.map((row) => (
                       <tr key={row.id}>
+                        <td>
+                          <Avatar
+                            kind="users"
+                            id={row.id}
+                            stamp={row.photoUpdatedAt}
+                            name={row.fullName}
+                            size={36}
+                          />
+                        </td>
                         <td>
                           <strong>{row.username}</strong>
                           {row.mustChangePassword && (
@@ -239,14 +335,24 @@ export default function Users() {
                             <button
                               type="button"
                               className="btn ghost small"
+                              onClick={() => setViewing(row)}
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              className="btn ghost small"
                               onClick={() => {
                                 setFormError('')
+                                setPhotoFile(null)
+                                setPhotoError('')
                                 setEditing({
                                   ...row,
                                   email: row.email || '',
                                   mobile: row.mobile || '',
                                   zoneIds: (row.zoneIds || []).map(String),
                                   newPassword: '',
+                                  photoUpdatedAt: row.photoUpdatedAt,
                                 })
                               }}
                             >
@@ -264,7 +370,7 @@ export default function Users() {
                       </tr>
                     ))
                   ) : (
-                    <EmptyRow colSpan={8}>No accounts match these filters</EmptyRow>
+                    <EmptyRow colSpan={9}>No accounts match these filters</EmptyRow>
                   )}
                 </tbody>
               </table>
@@ -300,6 +406,14 @@ export default function Users() {
         {creating && (
           <form id="create-user" onSubmit={onCreate}>
             <Alert kind="error">{formError}</Alert>
+            <PhotoPicker
+              onReject={setPhotoError}
+              kind="users"
+              name={creating.fullName}
+              file={photoFile}
+              onPick={setPhotoFile}
+              error={photoError}
+            />
             <div className="form-grid">
               <Field label="Username" required>
                 <input
@@ -346,8 +460,16 @@ export default function Users() {
               <Field label="Mobile">
                 <input
                   value={creating.mobile}
-                  onChange={(e) => setCreating({ ...creating, mobile: e.target.value })}
+                  onChange={(e) =>
+                    setCreating({ ...creating, mobile: digitsOnly(e.target.value) })
+                  }
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="9876543210"
                 />
+                {creating.mobile && creating.mobile.length !== 10 && (
+                  <p className="photo-error">A mobile number is 10 digits.</p>
+                )}
               </Field>
             </div>
 
@@ -429,6 +551,38 @@ export default function Users() {
         {editing && (
           <form id="edit-user" onSubmit={onUpdate}>
             <Alert kind="error">{formError}</Alert>
+            {/*
+              The chosen photo is held here and sent by Save changes, with the rest
+              of the form. It used to upload the moment a file was picked, which put
+              a separate failure on screen before anything had been saved - and made
+              "update the photo and the other details" two actions instead of one.
+            */}
+            <PhotoPicker
+              onReject={setPhotoError}
+              kind="users"
+              id={editing.id}
+              stamp={editing.photoUpdatedAt}
+              name={editing.fullName}
+              file={photoFile}
+              onPick={(chosen) => {
+                setPhotoError('')
+                setPhotoFile(chosen)
+              }}
+              busy={photoBusy}
+              error={photoError}
+              onRemove={async () => {
+                setPhotoBusy(true)
+                try {
+                  await userApiPhoto.remove(editing.id)
+                  setEditing((cur) => ({ ...cur, photoUpdatedAt: null }))
+                  load()
+                } catch (err) {
+                  setPhotoError(errorMessage(err, 'Could not remove the photo'))
+                } finally {
+                  setPhotoBusy(false)
+                }
+              }}
+            />
             <div className="form-grid">
               <Field label="Full name" required>
                 <input
@@ -460,8 +614,21 @@ export default function Users() {
               <Field label="Mobile">
                 <input
                   value={editing.mobile}
-                  onChange={(e) => setEditing({ ...editing, mobile: e.target.value })}
+                  onChange={(e) =>
+                    setEditing({ ...editing, mobile: digitsOnly(e.target.value) })
+                  }
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="9876543210"
                 />
+                {/*
+                  Said here rather than only on save. Accounts created before the rule
+                  existed can hold a number of another length, and without this the
+                  form looked fine until saving failed on a field nobody had touched.
+                */}
+                {editing.mobile && editing.mobile.length !== 10 && (
+                  <p className="photo-error">A mobile number is 10 digits.</p>
+                )}
               </Field>
               <Field label="Reset password (optional)">
                 <input
@@ -509,6 +676,96 @@ export default function Users() {
               </Alert>
             )}
           </form>
+        )}
+      </Modal>
+
+      {/* ---------- read-only account detail ---------- */}
+      <Modal
+        title={viewing ? viewing.fullName : 'Account'}
+        open={Boolean(viewing)}
+        onClose={() => setViewing(null)}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const row = viewing
+                setViewing(null)
+                setFormError('')
+                setPhotoFile(null)
+                setEditing({
+                  ...row,
+                  email: row.email || '',
+                  mobile: row.mobile || '',
+                  zoneIds: (row.zoneIds || []).map(String),
+                  newPassword: '',
+                  photoUpdatedAt: row.photoUpdatedAt,
+                })
+              }}
+            >
+              Edit
+            </button>
+            <button type="button" className="btn ghost" onClick={() => setViewing(null)}>
+              Close
+            </button>
+          </>
+        }
+      >
+        {viewing && (
+          <div className="view-doc">
+            <div className="view-head">
+              <Avatar
+                kind="users"
+                id={viewing.id}
+                stamp={viewing.photoUpdatedAt}
+                name={viewing.fullName}
+                size={88}
+                square
+              />
+              <div>
+                <h3 className="view-name">{viewing.fullName}</h3>
+                <p className="view-meta">{viewing.username}</p>
+                <span className="badge role">{viewing.roleDisplayName}</span>{' '}
+                <Badge
+                  value={viewing.enabled ? 'active' : 'inactive'}
+                  label={viewing.enabled ? 'Enabled' : 'Disabled'}
+                />
+              </div>
+            </div>
+
+            <h4 className="view-section">Account</h4>
+            <dl className="kv">
+              <dt>Login</dt>
+              <dd>{viewing.username}</dd>
+              <dt>Full name</dt>
+              <dd>{viewing.fullName}</dd>
+              <dt>Role</dt>
+              <dd>{viewing.roleDisplayName}</dd>
+              <dt>Email</dt>
+              <dd>{viewing.email || '-'}</dd>
+              <dt>Mobile</dt>
+              <dd>{viewing.mobile || '-'}</dd>
+            </dl>
+
+            <h4 className="view-section">Access</h4>
+            <dl className="kv">
+              <dt>Zones</dt>
+              <dd>{viewing.zoneNames?.length ? viewing.zoneNames.join(', ') : 'All zones'}</dd>
+              <dt>Status</dt>
+              <dd>{viewing.enabled ? 'Enabled' : 'Disabled'}</dd>
+              <dt>Must change password</dt>
+              <dd>{viewing.mustChangePassword ? 'Yes' : 'No'}</dd>
+              <dt>Last sign in</dt>
+              <dd>
+                {viewing.lastLoginAt
+                  ? viewing.lastLoginAt.slice(0, 16).replace('T', ' ')
+                  : 'never'}
+              </dd>
+              <dt>Photo on file</dt>
+              <dd>{viewing.hasPhoto ? 'Yes' : 'No'}</dd>
+            </dl>
+          </div>
         )}
       </Modal>
     </div>

@@ -14,10 +14,10 @@ import java.time.LocalTime;
 @Entity
 @Table(name = "attendance",
         uniqueConstraints = @UniqueConstraint(name = "uk_attendance_sewadar_date_type",
-                columnNames = {"sewadar_id", "attendance_date", "sewa_type"}),
+                columnNames = {"sewadarId", "attendanceDate", "sewaType"}),
         indexes = {
-                @Index(name = "idx_attendance_date", columnList = "attendance_date"),
-                @Index(name = "idx_attendance_zone_date", columnList = "zone_id,attendance_date")
+                @Index(name = "idx_attendance_date", columnList = "attendanceDate"),
+                @Index(name = "idx_attendance_zone_date", columnList = "zoneId,attendanceDate")
         })
 @Getter
 @Setter
@@ -32,7 +32,7 @@ public class Attendance extends Auditable {
 
     @NotNull
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "sewadar_id", nullable = false)
+    @JoinColumn(name = "sewadarId", nullable = false)
     private Sewadar sewadar;
 
     /**
@@ -41,16 +41,16 @@ public class Attendance extends Auditable {
      */
     @NotNull
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "zone_id", nullable = false)
+    @JoinColumn(name = "zoneId", nullable = false)
     private Zone zone;
 
     @NotNull
-    @Column(name = "attendance_date", nullable = false)
+    @Column(name = "attendanceDate", nullable = false)
     private LocalDate attendanceDate;
 
     @NotNull
     @Enumerated(EnumType.STRING)
-    @Column(name = "sewa_type", nullable = false, length = 30)
+    @Column(name = "sewaType", nullable = false, length = 30)
     private SewaType sewaType;
 
     @NotNull
@@ -58,10 +58,10 @@ public class Attendance extends Auditable {
     @Column(nullable = false, length = 20)
     private AttendanceStatus status;
 
-    @Column(name = "in_time")
+    @Column(name = "inTime")
     private LocalTime inTime;
 
-    @Column(name = "out_time")
+    @Column(name = "outTime")
     private LocalTime outTime;
 
     /** Hours of sewa. Derived from in/out time when both are present. */
@@ -72,15 +72,29 @@ public class Attendance extends Auditable {
     private String remarks;
 
     /** Username of the account that marked or last updated this record. */
-    @Column(name = "marked_by", length = 60)
+    @Column(name = "markedBy", length = 60)
     private String markedBy;
 
-    @PrePersist
-    @PreUpdate
-    void deriveHours() {
+    /**
+     * Recomputes {@link #hours} from the in and out time.
+     *
+     * <p>Call this from the service before returning a saved entity. Relying on the
+     * lifecycle callback alone is not enough: Hibernate fires {@code @PreUpdate} at
+     * flush time, which is after the response DTO has already been built, so an
+     * updated record would report stale hours to the caller even though the database
+     * ends up correct.</p>
+     */
+    public void recalculateHours() {
         if (inTime != null && outTime != null && outTime.isAfter(inTime)) {
             long minutes = Duration.between(inTime, outTime).toMinutes();
             this.hours = Math.round((minutes / 60.0) * 100.0) / 100.0;
         }
+    }
+
+    /** Safety net for any path that writes the entity without going through a service. */
+    @PrePersist
+    @PreUpdate
+    void deriveHours() {
+        recalculateHours();
     }
 }

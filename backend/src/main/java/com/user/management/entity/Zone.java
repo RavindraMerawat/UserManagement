@@ -5,7 +5,10 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
 @Entity
-@Table(name = "zones", uniqueConstraints = @UniqueConstraint(name = "uk_zone_code", columnNames = "code"))
+@Table(name = "zones", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_zone_code", columnNames = "code"),
+        @UniqueConstraint(name = "uk_zone_name", columnNames = "name")
+})
 @Getter
 @Setter
 @NoArgsConstructor

@@ -2,13 +2,32 @@ spring:
   application:
     name: user-management
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:sewa_ums}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:office_management}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  # db/schema.sql builds the tables, not Hibernate: it is the only way to control
+  # the order of columns, and it is where the audit four are pinned to the end of
+  # every table. Every statement is CREATE ... IF NOT EXISTS, so this is safe on
+  # every start - the first one creates, the rest do nothing. It never drops.
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      continue-on-error: false
   jpa:
     hibernate:
-      ddl-auto: update
+      # validate, not update: Hibernate checks the entities against schema.sql and
+      # refuses to start if they have drifted apart, instead of quietly altering
+      # the database and undoing the column order.
+      ddl-auto: ${DDL_AUTO:validate}
+      naming:
+        # Spring's default strategy rewrites even an explicit @Column(name = "badgeNo")
+        # into badge_no. This one uses names exactly as given, which is what keeps the
+        # column and the Java field the same word.
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    # SQL init must finish before Hibernate validates against it.
+    defer-datasource-initialization: false
     open-in-view: false
     properties:
       hibernate:
@@ -34,8 +53,13 @@ spring:
           protocol: smtp
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      # Comfortably above the 3 MB the application itself enforces, on purpose:
+      # a 5 MB photo then reaches PhotoService and is refused with the exact limit
+      # ("The image must be 3 MB or smaller") instead of being cut off by the
+      # container with a generic error. Anything past this is caught by
+      # GlobalExceptionHandler and reported as too large.
+      max-file-size: 15MB
+      max-request-size: 16MB
 
 server:
   port: ${SERVER_PORT:8080}

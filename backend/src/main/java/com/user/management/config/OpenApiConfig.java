@@ -19,7 +19,7 @@ public class OpenApiConfig {
     public OpenAPI umsOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Sewadar User Management & Attendance API")
+                        .title("Pandal Office Management API")
                         .version("1.0.0")
                         .description("""
                                 Role based API for sewadar master data, attendance (roster sewa and

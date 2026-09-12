@@ -17,21 +17,27 @@ import java.time.Instant;
 @Setter
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
+/*
+ * The four audit columns every table carries. They are written LAST in the DDL of
+ * every table on purpose: a row should read as its own facts first, with "who touched
+ * it and when" as a footer. Hibernate cannot control column order - the schema script
+ * does.
+ */
 public abstract class Auditable {
 
     @CreatedDate
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "createdAt", updatable = false)
     private Instant createdAt;
 
     @LastModifiedDate
-    @Column(name = "updated_at")
+    @Column(name = "updatedAt")
     private Instant updatedAt;
 
     @CreatedBy
-    @Column(name = "created_by", updatable = false, length = 60)
+    @Column(name = "createdBy", updatable = false, length = 60)
     private String createdBy;
 
     @LastModifiedBy
-    @Column(name = "updated_by", length = 60)
+    @Column(name = "updatedBy", length = 60)
     private String updatedBy;
 }

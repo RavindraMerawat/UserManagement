@@ -36,7 +36,15 @@ export default function Contact() {
   const set = (key) => (event) => setForm({ ...form, [key]: event.target.value })
 
   return (
-    <div className="grid-2">
+    <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Contact</h1>
+          <p className="page-sub">Reach the office, and see who to ask.</p>
+        </div>
+      </div>
+
+      <div className="grid-2">
       <div className="card">
         <h3>Send a message to the office</h3>
         <Alert kind="error" onClose={() => setError('')}>
@@ -111,6 +119,7 @@ export default function Contact() {
             </li>
           </ul>
         </div>
+      </div>
       </div>
     </div>
   )

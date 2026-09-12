@@ -18,6 +18,13 @@ public record LoginResponse(
         List<String> zoneNames,
         Long sewadarId,
         boolean mustChangePassword,
+        /*
+         * The signed-in account's own photo, so the shell can draw it beside the name
+         * without a second call. `photoUpdatedAt` is the cache key the client uses -
+         * a new upload changes it, which is what makes the new image appear.
+         */
+        boolean hasPhoto,
+        Instant photoUpdatedAt,
         List<String> menu
 ) {
 }

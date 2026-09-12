@@ -6,6 +6,7 @@ import com.user.management.model.AttendanceResponse;
 import com.user.management.model.DashboardResponse;
 import com.user.management.repository.AttendanceRepository;
 import com.user.management.repository.SewadarRepository;
+import com.user.management.repository.UserRepository;
 import com.user.management.repository.ZoneChangeRequestRepository;
 import com.user.management.security.AppUserPrincipal;
 import com.user.management.security.CurrentUserService;
@@ -17,8 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.Month;
+import java.time.ZoneId;
+import java.time.format.TextStyle;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -31,6 +38,7 @@ public class DashboardService {
     private final SewadarRepository sewadarRepository;
     private final AttendanceRepository attendanceRepository;
     private final ZoneChangeRequestRepository requestRepository;
+    private final UserRepository userRepository;
     private final CurrentUserService currentUser;
     private final ZoneService zoneService;
 
@@ -44,20 +52,49 @@ public class DashboardService {
         LocalDate monthStart = month.atDay(1);
         LocalDate monthEnd = month.atEndOfMonth();
 
-        long totalSewadars;
-        if (scope.sewadarId() != null) {
-            totalSewadars = 1;
-        } else if (scope.zoneIds() == null) {
-            totalSewadars = sewadarRepository.countByActiveTrue();
-        } else {
-            totalSewadars = sewadarRepository.countByZoneIdInAndActiveTrue(scope.zoneIds());
-        }
+        // Every tile counts people, through the same query the grid behind it lists,
+        // so tapping a tile can never show a different number of rows than the tile
+        // just showed.
+        long totalSewadars = sewadarRepository.countForDashboard(
+                null, today, scope.zoneIds(), scope.sewadarId());
+        long presentToday = sewadarRepository.countForDashboard(
+                AttendanceStatus.PRESENT, today, scope.zoneIds(), scope.sewadarId());
+        long absentToday = sewadarRepository.countForDashboard(
+                AttendanceStatus.ABSENT, today, scope.zoneIds(), scope.sewadarId());
+        long leaveToday = sewadarRepository.countForDashboard(
+                AttendanceStatus.LEAVE, today, scope.zoneIds(), scope.sewadarId());
 
-        long presentToday = countToday(today, AttendanceStatus.PRESENT, scope);
-        long absentToday = countToday(today, AttendanceStatus.ABSENT, scope);
+        // The same measurements one period earlier, so a tile can show real movement.
+        // Yesterday for the day tiles; the end of last month for the register total.
+        LocalDate yesterday = today.minusDays(1);
+        long presentYesterday = sewadarRepository.countForDashboard(
+                AttendanceStatus.PRESENT, yesterday, scope.zoneIds(), scope.sewadarId());
+        long absentYesterday = sewadarRepository.countForDashboard(
+                AttendanceStatus.ABSENT, yesterday, scope.zoneIds(), scope.sewadarId());
+        long leaveYesterday = sewadarRepository.countForDashboard(
+                AttendanceStatus.LEAVE, yesterday, scope.zoneIds(), scope.sewadarId());
+        long totalLastMonth = sewadarRepository.countActiveAsOf(
+                monthStart.atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                scope.zoneIds(), scope.sewadarId());
 
         long pendingRequests = requestRepository.countInScope(
                 RequestStatus.PENDING, scope.zoneIds(), scope.sewadarId());
+        long pendingLastWeek = requestRepository.countPendingAsOf(
+                today.minusDays(7).atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                scope.zoneIds(), scope.sewadarId());
+
+        // Account totals are only meaningful - and only permitted - for the roles
+        // that administer accounts. Everyone else gets zero here, and the dashboard
+        // shows them a different fourth tile.
+        boolean seesAccounts = switch (principal.getRole()) {
+            case ADMIN, OFFICE_ADMIN -> true;
+            default -> false;
+        };
+        long activeUsers = seesAccounts ? userRepository.countByEnabledTrue() : 0;
+        long activeUsersLastMonth = seesAccounts
+                ? userRepository.countByEnabledTrueAndCreatedAtLessThanEqual(
+                        monthStart.atStartOfDay(ZoneId.systemDefault()).toInstant())
+                : 0;
 
         Map<String, Long> statusBreakdown = attendanceRepository
                 .countByStatus(monthStart, monthEnd, scope.zoneIds(), scope.sewadarId()).stream()
@@ -85,6 +122,8 @@ public class DashboardService {
             myMonthHours = Math.round(myMonthHours * 100.0) / 100.0;
         }
 
+        List<DashboardResponse.MonthlyAttendancePoint> monthly = monthlyAttendance(today, scope);
+
         List<AttendanceResponse> recent = attendanceRepository.search(
                         null, null, null, null, null, null,
                         scope.zoneIds(), scope.sewadarId(),
@@ -102,26 +141,48 @@ public class DashboardService {
                 totalSewadars,
                 presentToday,
                 absentToday,
+                leaveToday,
                 pendingRequests,
+                totalLastMonth,
+                presentYesterday,
+                absentYesterday,
+                leaveYesterday,
+                pendingLastWeek,
+                activeUsers,
+                activeUsersLastMonth,
                 myMonthPresent,
                 myMonthHours,
+                monthly,
                 statusBreakdown,
                 sewaTypeBreakdown,
                 recent);
     }
 
-    private long countToday(LocalDate today, AttendanceStatus status, DataScope scope) {
-        if (scope.sewadarId() != null) {
-            return attendanceRepository
-                    .findBySewadarIdAndAttendanceDateBetweenOrderByAttendanceDateAsc(
-                            scope.sewadarId(), today, today).stream()
-                    .filter(a -> a.getStatus() == status)
-                    .count();
+    /**
+     * Present and absent days for each month of this year up to today, in order, with
+     * a zero entry for any month that has none - a chart with a gap where February
+     * should be is harder to read than one with an empty column.
+     */
+    private List<DashboardResponse.MonthlyAttendancePoint> monthlyAttendance(LocalDate today,
+                                                                             DataScope scope) {
+        LocalDate yearStart = today.withDayOfYear(1);
+        Map<Integer, Map<AttendanceStatus, Long>> byMonth = new LinkedHashMap<>();
+        attendanceRepository
+                .countByMonthAndStatus(yearStart, today, scope.zoneIds(), scope.sewadarId())
+                .forEach(row -> byMonth
+                        .computeIfAbsent(row.getMonth(), m -> new EnumMap<>(AttendanceStatus.class))
+                        .put(row.getStatus(), row.getCount()));
+
+        List<DashboardResponse.MonthlyAttendancePoint> points = new ArrayList<>();
+        for (int month = 1; month <= today.getMonthValue(); month++) {
+            Map<AttendanceStatus, Long> counts = byMonth.getOrDefault(month, Map.of());
+            points.add(new DashboardResponse.MonthlyAttendancePoint(
+                    month,
+                    Month.of(month).getDisplayName(TextStyle.SHORT, Locale.ENGLISH),
+                    counts.getOrDefault(AttendanceStatus.PRESENT, 0L),
+                    counts.getOrDefault(AttendanceStatus.ABSENT, 0L)));
         }
-        if (scope.zoneIds() == null) {
-            return attendanceRepository.countByAttendanceDateAndStatus(today, status);
-        }
-        return attendanceRepository.countByAttendanceDateAndStatusAndZoneIdIn(today, status, scope.zoneIds());
+        return points;
     }
 
     private String scopeLabel(DataScope scope) {

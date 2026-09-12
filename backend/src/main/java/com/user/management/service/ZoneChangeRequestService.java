@@ -9,6 +9,7 @@ import com.user.management.exception.ForbiddenException;
 import com.user.management.exception.NotFoundException;
 import com.user.management.integration.NotificationService;
 import com.user.management.model.PageResponse;
+import com.user.management.model.TabCountsResponse;
 import com.user.management.model.ZoneChangeCreateRequest;
 import com.user.management.model.ZoneChangeRequestResponse;
 import com.user.management.model.ZoneChangeReviewRequest;
@@ -46,6 +47,20 @@ public class ZoneChangeRequestService {
         return PageResponse.of(
                 requestRepository.search(status, scope.zoneIds(), scope.sewadarId(), pageable),
                 ZoneChangeRequestResponse::from);
+    }
+
+    /** The numbers on the tab strip, in the caller's scope. */
+    @Transactional(readOnly = true)
+    public TabCountsResponse tabCounts() {
+        DataScope scope = currentUser.scope();
+        return TabCountsResponse.of(
+                requestRepository.countByStatusInScope(null, scope.zoneIds(), scope.sewadarId()),
+                "pending", requestRepository.countByStatusInScope(
+                        RequestStatus.PENDING, scope.zoneIds(), scope.sewadarId()),
+                "approved", requestRepository.countByStatusInScope(
+                        RequestStatus.APPROVED, scope.zoneIds(), scope.sewadarId()),
+                "rejected", requestRepository.countByStatusInScope(
+                        RequestStatus.REJECTED, scope.zoneIds(), scope.sewadarId()));
     }
 
     @Transactional(readOnly = true)

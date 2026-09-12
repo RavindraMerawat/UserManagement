@@ -45,6 +45,34 @@ export function Pager({ page, totalPages, totalElements, onChange }) {
 }
 
 /** Horizontal bar breakdown, used for the status and sewa type summaries. */
+/**
+ * The tab strip a list screen is filtered with: "All (1,248)  Active (1,102)".
+ *
+ * <p>The counts come from the server with the caller's scope applied, so a Zone
+ * Incharge's "All" is their zones rather than the whole register. A tab whose count
+ * has not arrived yet simply shows no number rather than a zero, because a zero
+ * that later turns into 1,248 reads as a bug.</p>
+ */
+export function TabStrip({ tabs, value, onChange }) {
+  return (
+    <div className="tabs" role="tablist">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          aria-selected={tab.key === value}
+          className={tab.key === value ? 'active' : undefined}
+          onClick={() => onChange(tab.key)}
+        >
+          {tab.label}
+          {tab.count != null && <span className="tab-count">{tab.count.toLocaleString()}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function BarBreakdown({ data, emptyLabel = 'No data for this period' }) {
   const entries = Object.entries(data || {})
   if (entries.length === 0) {

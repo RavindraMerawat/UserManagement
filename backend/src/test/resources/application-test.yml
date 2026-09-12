@@ -4,9 +4,17 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ''
+  # The tests run on H2 and build their schema from the entities, so the MySQL
+  # script is not used here. That also keeps the entity mapping under test in its
+  # own right rather than only ever being checked against the script.
+  sql:
+    init:
+      mode: never
   jpa:
     hibernate:
       ddl-auto: create-drop
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect

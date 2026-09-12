@@ -22,6 +22,9 @@ public record SewadarRequest(
         @Schema(description = "Unique sewadar id", example = "SWD-1001")
         String badgeNumber,
 
+        @Schema(description = "Whether the issued badge has been received by the sewadar")
+        Boolean badgeReceived,
+
         // ---- registration form fields ----
 
         @NotBlank(message = "Name is required")
@@ -36,8 +39,13 @@ public record SewadarRequest(
         @Schema(description = "Birth Date", example = "1990-04-18")
         LocalDate dateOfBirth,
 
-        @Pattern(regexp = "^$|^[0-9+ -]{7,20}$", message = "Enter a valid mobile number")
-        @Schema(description = "Mobile No", example = "9876543210")
+        /*
+         * Exactly ten digits. Spaces and dashes are stripped by the service before
+         * this is checked, so "98765 43210" is accepted and stored as ten digits -
+         * the rule is on the number, not on how it was typed.
+         */
+        @Pattern(regexp = "^$|^[0-9]{10}$", message = "Mobile number must be 10 digits")
+        @Schema(description = "Mobile No, 10 digits", example = "9876543210")
         String mobile,
 
         @NotNull(message = "Zone is required")

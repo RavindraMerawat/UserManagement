@@ -116,6 +116,37 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                                            @Param("zoneIds") Collection<Long> zoneIds,
                                            @Param("sewadarScopeId") Long sewadarScopeId);
 
+    /**
+     * Present and absent days per calendar month, for the dashboard chart.
+     *
+     * <p>This counts attendance <b>records</b>, not people: "March had 412 present
+     * days" is the question a monthly attendance chart answers. The tiles above it
+     * count people, which is a different question - the chart is labelled so the two
+     * are not read as the same number.</p>
+     */
+    @Query("""
+            select month(a.attendanceDate) as month, a.status as status, count(a.id) as count
+            from Attendance a
+            where a.attendanceDate between :from and :to
+              and (:zoneIds is null or a.zone.id in :zoneIds)
+              and (:sewadarScopeId is null or a.sewadar.id = :sewadarScopeId)
+            group by month(a.attendanceDate), a.status
+            order by month(a.attendanceDate)
+            """)
+    List<MonthlyStatusRow> countByMonthAndStatus(@Param("from") LocalDate from,
+                                                 @Param("to") LocalDate to,
+                                                 @Param("zoneIds") Collection<Long> zoneIds,
+                                                 @Param("sewadarScopeId") Long sewadarScopeId);
+
+    /** One (month, status) bucket of {@link #countByMonthAndStatus}. */
+    interface MonthlyStatusRow {
+        int getMonth();
+
+        AttendanceStatus getStatus();
+
+        long getCount();
+    }
+
     @Query("""
             select a.status as status, count(a.id) as count
             from Attendance a

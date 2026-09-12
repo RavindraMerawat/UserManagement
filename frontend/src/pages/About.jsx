@@ -46,7 +46,8 @@ export default function About() {
       <div className="card">
         <h3>About this application</h3>
         <p>
-          This system keeps the sewadar register and the daily sewa attendance for every zone. It
+          Pandal Office Management keeps the sewadar register and the daily sewa attendance for
+          every zone. It
           records <strong>roster sewa</strong>, <strong>construction sewa</strong> and office sewa,
           rolls them up into monthly reports, and shares those reports over email and WhatsApp.
         </p>

@@ -5,9 +5,15 @@ import com.user.management.entity.SewaType;
 import com.user.management.model.AttendanceRequest;
 import com.user.management.model.AttendanceResponse;
 import com.user.management.model.BulkAttendanceRequest;
+import com.user.management.model.BulkCheckInOutRequest;
+import com.user.management.model.CheckInOutRequest;
+import com.user.management.model.CheckInOutResult;
+import com.user.management.model.SewadarLookupResponse;
 import com.user.management.model.PageResponse;
 import com.user.management.service.AttendanceService;
+import com.user.management.service.CheckInOutService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +47,7 @@ import java.util.List;
 public class AttendanceController {
 
     private final AttendanceService attendanceService;
+    private final CheckInOutService checkInOutService;
 
     @Operation(summary = "Search attendance within your access scope")
     @GetMapping
@@ -72,6 +79,65 @@ public class AttendanceController {
     public AttendanceResponse get(@PathVariable Long id) {
         return attendanceService.get(id);
     }
+
+    // ------------------------------------------------ mark attendance screen
+
+    @Operation(summary = "Find sewadars by badge number, name, mobile or Aadhaar",
+            description = """
+                    Powers the search box on the Mark Attendance screen. Badge number and
+                    Aadhaar match exactly so scanning a card lands on one person; name and
+                    mobile match on a contains. Each hit carries the sewadar's status for
+                    the given date so the screen knows whether to offer Check In or
+                    Check Out. Always narrowed to the caller's zones.
+                    """)
+    @GetMapping("/lookup")
+    public List<SewadarLookupResponse> lookup(
+            @Parameter(description = "Badge number, name, mobile number or Aadhaar number")
+            @RequestParam String query,
+            @RequestParam(required = false) SewaType sewaType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate onDate) {
+        return checkInOutService.lookup(query, sewaType, onDate);
+    }
+
+    @Operation(summary = "Today's check in / check out status for one sewadar")
+    @GetMapping("/status/{sewadarId}")
+    public SewadarLookupResponse status(
+            @PathVariable Long sewadarId,
+            @RequestParam(required = false) SewaType sewaType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate onDate) {
+        return checkInOutService.status(sewadarId, sewaType, onDate);
+    }
+
+    @Operation(summary = "Check one sewadar in",
+            description = "Sets the in time and marks the day present. Refused if they are "
+                    + "already checked in, so the original arrival time is never overwritten.")
+    @PostMapping("/check-in")
+    public AttendanceResponse checkIn(@Valid @RequestBody CheckInOutRequest request) {
+        return checkInOutService.checkIn(request);
+    }
+
+    @Operation(summary = "Check one sewadar out",
+            description = "Sets the out time and derives the sewa hours from the in time.")
+    @PostMapping("/check-out")
+    public AttendanceResponse checkOut(@Valid @RequestBody CheckInOutRequest request) {
+        return checkInOutService.checkOut(request);
+    }
+
+    @Operation(summary = "Check a group in at once",
+            description = "For the zone wise screen. A sewadar who cannot be marked is "
+                    + "reported as a skipped row rather than failing the whole batch.")
+    @PostMapping("/bulk-check-in")
+    public CheckInOutResult bulkCheckIn(@Valid @RequestBody BulkCheckInOutRequest request) {
+        return checkInOutService.bulkCheckIn(request);
+    }
+
+    @Operation(summary = "Check a group out at once")
+    @PostMapping("/bulk-check-out")
+    public CheckInOutResult bulkCheckOut(@Valid @RequestBody BulkCheckInOutRequest request) {
+        return checkInOutService.bulkCheckOut(request);
+    }
+
+    // ------------------------------------------------------- direct marking
 
     @Operation(summary = "Mark attendance for one sewadar",
             description = "Re-marking the same sewadar, date and sewa type updates the existing entry.")

@@ -6,16 +6,18 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.time.Instant;
 import java.time.LocalDate;
 
 @Entity
 @Table(name = "sewadars",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_sewadar_badge", columnNames = "badge_number"),
-                @UniqueConstraint(name = "uk_sewadar_aadhar", columnNames = "aadhar_number")
+                @UniqueConstraint(name = "uk_sewadar_badge", columnNames = "badgeNo"),
+                @UniqueConstraint(name = "uk_sewadar_aadhar", columnNames = "aadharNo"),
+                @UniqueConstraint(name = "uk_sewadar_email", columnNames = "emailId")
         },
         indexes = {
-                @Index(name = "idx_sewadar_zone", columnList = "zone_id"),
+                @Index(name = "idx_sewadar_zone", columnList = "zoneId"),
                 @Index(name = "idx_sewadar_name", columnList = "name"),
                 @Index(name = "idx_sewadar_area", columnList = "area")
         })
@@ -32,8 +34,17 @@ public class Sewadar extends Auditable {
 
     /** Unique sewadar identifier. Every attendance and report row is keyed off this. */
     @NotBlank
-    @Column(name = "badge_number", nullable = false, length = 40)
+    @Column(name = "badgeNo", nullable = false, length = 40)
     private String badgeNumber;
+
+    /** A badge number means a badge has been issued; receipt is confirmed separately. */
+    @Builder.Default
+    @Column(name = "badgeIssued", nullable = false)
+    private boolean badgeIssued = false;
+
+    @Builder.Default
+    @Column(name = "badgeReceived", nullable = false)
+    private boolean badgeReceived = false;
 
     /** Name */
     @NotBlank
@@ -41,21 +52,21 @@ public class Sewadar extends Auditable {
     private String name;
 
     /** F/H Name - father or husband name. */
-    @Column(name = "father_or_husband_name", length = 150)
+    @Column(name = "fatherOrHusbandName", length = 150)
     private String fatherOrHusbandName;
 
     /** Birth Date */
-    @Column(name = "date_of_birth")
+    @Column(name = "birthDate")
     private LocalDate dateOfBirth;
 
     /** Mobile No */
-    @Column(length = 20)
+    @Column(name = "mobileNo", length = 20)
     private String mobile;
 
     /** Zone */
     @NotNull
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "zone_id", nullable = false)
+    @JoinColumn(name = "zoneId", nullable = false)
     private Zone zone;
 
     /** Address */
@@ -65,12 +76,15 @@ public class Sewadar extends Auditable {
     /**
      * Aadhaar No. Stored as 12 digits with no spaces. Unique where present, and
      * nullable so a sewadar can be registered before the number is collected.
+     *
+     * <p>Stored as typed; what protects it is {@code AadharMask}, which hides all but
+     * the last four digits from any role that has no reason to read the number.</p>
      */
-    @Column(name = "aadhar_number", length = 12)
+    @Column(name = "aadharNo", length = 12)
     private String aadharNumber;
 
     /** Blood Group */
-    @Column(name = "blood_group", length = 10)
+    @Column(name = "bloodGroup", length = 10)
     private String bloodGroup;
 
     /** Area the sewadar belongs to, inside the zone. */
@@ -78,7 +92,7 @@ public class Sewadar extends Auditable {
     private String area;
 
     /** Center / Point the sewadar reports to. */
-    @Column(name = "center_point", length = 120)
+    @Column(name = "point", length = 120)
     private String centerPoint;
 
     // ---- additional details, kept for reporting and contact ----
@@ -88,7 +102,7 @@ public class Sewadar extends Auditable {
     private Gender gender;
 
     @Email
-    @Column(length = 150)
+    @Column(name = "emailId", length = 150)
     private String email;
 
     @Column(length = 80)
@@ -102,18 +116,25 @@ public class Sewadar extends Auditable {
     private String department;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "primary_sewa_type", length = 30)
+    @Column(name = "primarySewaType", length = 30)
     private SewaType primarySewaType;
 
-    @Column(name = "joining_date")
+    @Column(name = "joiningDate")
     private LocalDate joiningDate;
 
     @Builder.Default
     @Column(nullable = false)
     private boolean active = true;
 
+    /**
+     * When the sewadar photo was last uploaded, or null if there is none. The image
+     * bytes live in the photos table so grid queries never load them.
+     */
+    @Column(name = "photoUpdatedAt")
+    private Instant photoUpdatedAt;
+
     /** Login account for this sewadar, created on demand. */
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", unique = true)
+    @JoinColumn(name = "userId", unique = true)
     private User user;
 }

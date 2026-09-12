@@ -97,6 +97,13 @@ export default function Reports() {
 
   return (
     <div>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Reports</h1>
+          <p className="page-sub">Generate, share and export attendance and sewa reports.</p>
+        </div>
+      </div>
+
       <Alert kind="error" onClose={() => setError('')}>
         {error}
       </Alert>

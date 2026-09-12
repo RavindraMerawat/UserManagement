@@ -8,6 +8,9 @@ import java.util.Optional;
 
 public interface ZoneRepository extends JpaRepository<Zone, Long> {
 
+    /** Two zones must not share a name, any more than they share a code. */
+    boolean existsByNameIgnoreCase(String name);
+
     Optional<Zone> findByCodeIgnoreCase(String code);
 
     boolean existsByCodeIgnoreCase(String code);

@@ -54,8 +54,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
-                        // Account administration is ADMIN only.
-                        .requestMatchers("/api/users/**").hasRole("ADMIN")
+                        // Account administration: Admin and Office Admin. UserService
+                        // then stops an Office Admin creating or editing an ADMIN
+                        // account, so the wider door cannot be used to grant yourself
+                        // Admin.
+                        .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")
                         // Zone master data: read for everyone signed in, writes for admins.
                         .requestMatchers(HttpMethod.POST, "/api/zones/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/zones/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")

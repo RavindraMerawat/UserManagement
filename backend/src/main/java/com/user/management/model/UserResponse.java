@@ -21,7 +21,9 @@ public record UserResponse(
         List<String> zoneNames,
         boolean enabled,
         boolean mustChangePassword,
-        Instant lastLoginAt
+        Instant lastLoginAt,
+        boolean hasPhoto,
+        Instant photoUpdatedAt
 ) {
     public static UserResponse from(User u) {
         return new UserResponse(
@@ -36,6 +38,8 @@ public record UserResponse(
                 u.getZones().stream().map(Zone::getName).toList(),
                 u.isEnabled(),
                 u.isMustChangePassword(),
-                u.getLastLoginAt());
+                u.getLastLoginAt(),
+                u.getPhotoUpdatedAt() != null,
+                u.getPhotoUpdatedAt());
     }
 }
