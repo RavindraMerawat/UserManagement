@@ -11,6 +11,23 @@ public record DashboardResponse(
         String scopeLabel,
         LocalDate today,
         long totalSewadars,
+        /*
+         * The same three figures split male and female, which is what the dashboard
+         * draws as separate cards. They are carried beside the totals rather than
+         * replacing them: a total is not always male + female, because a record can
+         * have no gender on it, and a card that quietly lost those people would be
+         * worse than one that never claimed to hold them.
+         *
+         * Present and absent carry yesterday's split too, so those cards can show
+         * movement. The totals do not: the register a month ago would need its own
+         * historical query per gender, and a tile with no trend is honest where an
+         * invented one would not be.
+         */
+        GenderSplit totalByGender,
+        GenderSplit presentByGender,
+        GenderSplit absentByGender,
+        GenderSplit presentByGenderYesterday,
+        GenderSplit absentByGenderYesterday,
         long presentToday,
         long absentToday,
         long leaveToday,
@@ -47,5 +64,9 @@ public record DashboardResponse(
 ) {
     /** One column pair on the Attendance Overview chart. */
     public record MonthlyAttendancePoint(int month, String label, long present, long absent) {
+    }
+
+    /** A count split by gender. `other` covers OTHER and records with none. */
+    public record GenderSplit(long male, long female, long other) {
     }
 }

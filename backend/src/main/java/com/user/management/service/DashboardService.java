@@ -1,6 +1,8 @@
 package com.user.management.service;
 
 import com.user.management.entity.AttendanceStatus;
+import com.user.management.repository.projection.GenderCount;
+import com.user.management.entity.Gender;
 import com.user.management.entity.RequestStatus;
 import com.user.management.model.AttendanceResponse;
 import com.user.management.model.DashboardResponse;
@@ -64,6 +66,14 @@ public class DashboardService {
         long leaveToday = sewadarRepository.countForDashboard(
                 AttendanceStatus.LEAVE, today, scope.zoneIds(), scope.sewadarId());
 
+        // Male and female for the three cards the dashboard draws twice: one grouped
+        // query each, rather than one count per gender per metric.
+        DashboardResponse.GenderSplit totalByGender = splitOf(null, today, scope);
+        DashboardResponse.GenderSplit presentByGender =
+                splitOf(AttendanceStatus.PRESENT, today, scope);
+        DashboardResponse.GenderSplit absentByGender =
+                splitOf(AttendanceStatus.ABSENT, today, scope);
+
         // The same measurements one period earlier, so a tile can show real movement.
         // Yesterday for the day tiles; the end of last month for the register total.
         LocalDate yesterday = today.minusDays(1);
@@ -73,6 +83,11 @@ public class DashboardService {
                 AttendanceStatus.ABSENT, yesterday, scope.zoneIds(), scope.sewadarId());
         long leaveYesterday = sewadarRepository.countForDashboard(
                 AttendanceStatus.LEAVE, yesterday, scope.zoneIds(), scope.sewadarId());
+        DashboardResponse.GenderSplit presentByGenderYesterday =
+                splitOf(AttendanceStatus.PRESENT, yesterday, scope);
+        DashboardResponse.GenderSplit absentByGenderYesterday =
+                splitOf(AttendanceStatus.ABSENT, yesterday, scope);
+
         long totalLastMonth = sewadarRepository.countActiveAsOf(
                 monthStart.atStartOfDay(ZoneId.systemDefault()).toInstant(),
                 scope.zoneIds(), scope.sewadarId());
@@ -139,6 +154,11 @@ public class DashboardService {
                 scopeLabel(scope),
                 today,
                 totalSewadars,
+                totalByGender,
+                presentByGender,
+                absentByGender,
+                presentByGenderYesterday,
+                absentByGenderYesterday,
                 presentToday,
                 absentToday,
                 leaveToday,
@@ -183,6 +203,31 @@ public class DashboardService {
                     counts.getOrDefault(AttendanceStatus.ABSENT, 0L)));
         }
         return points;
+    }
+
+    /**
+     * Folds the grouped rows into male, female and everything else. A gender the
+     * query did not return stays at zero, which is the right answer for a zone with
+     * no women on its roster - and `other` keeps the people whose record carries no
+     * gender at all, so male + female + other always equals the total.
+     */
+    private DashboardResponse.GenderSplit splitOf(AttendanceStatus status,
+                                                  LocalDate onDate,
+                                                  DataScope scope) {
+        long male = 0;
+        long female = 0;
+        long other = 0;
+        for (GenderCount row : sewadarRepository.countForDashboardByGender(
+                status, onDate, scope.zoneIds(), scope.sewadarId())) {
+            if (row.getGender() == Gender.MALE) {
+                male += row.getCount();
+            } else if (row.getGender() == Gender.FEMALE) {
+                female += row.getCount();
+            } else {
+                other += row.getCount();
+            }
+        }
+        return new DashboardResponse.GenderSplit(male, female, other);
     }
 
     private String scopeLabel(DataScope scope) {

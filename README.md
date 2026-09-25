@@ -315,20 +315,45 @@ npm run build     # writes frontend/dist
 
 ## 6. Screens (left-hand menu)
 
+The menu, in order:
+
 | Screen | Route | Visible to |
 |---|---|---|
-| Home | `/` | everyone — dashboard scoped to the role |
-| About | `/about` | everyone — role matrix and module list |
+| Dashboard | `/` | everyone — figures scoped to the role; the tiles open the people behind them |
 | Sewadar | `/sewadars` | all except SEWADAR — search, add, edit, delete |
-| Attendance | `/attendance` | everyone — *Mark* tab for markers, *Records* tab for all |
+| Attendance | `/attendance` | everyone — four tabs, below |
+| Badge Detail | `/badges` | everyone — issue and collect is ADMIN, OFFICE_ADMIN and OFFICE_USER; the zone roles read only |
 | Report | `/reports` | everyone — monthly, roster sewa, construction sewa, custom range |
 | Request | `/requests` | everyone — raise, review and cancel zone changes |
-| Zones | `/zones` | ADMIN, OFFICE_ADMIN |
-| User Accounts | `/users` | ADMIN |
+| User Account | `/users` | ADMIN, OFFICE_ADMIN — only an ADMIN may touch an ADMIN account |
+| Setup | `/setup` | ADMIN, OFFICE_ADMIN — zones, areas and satsang points |
 | Contact | `/contact` | everyone — message to the office admins |
 
+Reached from elsewhere rather than the menu: `/profile` (My Profile), `/about`,
+`/sewadar-list` (a dashboard tile), `/login`.
+
 The menu is built from the `menu` array in the login response, so the server decides
-what appears.
+what appears; the client repeats the check on each route so typing a URL cannot get
+past it.
+
+### The four attendance tabs
+
+| Tab | For | Who |
+|---|---|---|
+| Mark Attendance | the person in front of you, now — one press, the clock is the record | markers |
+| Zone Attendance | a whole zone at once, ticked and checked in or out together | markers |
+| Manage Past Attendance | a day that was missed, with the times typed by hand | markers |
+| Records | everything on file, searchable and editable | everyone (*My Attendance* for a SEWADAR) |
+
+**Manage Past Attendance** accepts the **current month's past days only** — the first
+of the month through yesterday. Today belongs to Mark Attendance, where the clock is
+the record. The rule is enforced on the picker, on a typed date and again on save,
+and the allowed range is printed under the field. It is a screen policy: the server
+still accepts any non-future date, so a direct API call is not bound by it.
+
+Times already on file arrive filled in and locked, so only the missing half is
+editable — enter the check out for a day that has only a check in, and one **Save
+Attendance** press writes whichever halves are missing.
 
 ### Sewadar registration form
 
@@ -499,6 +524,15 @@ The look is defined in one file,
 sections: tokens, base, controls, data, overlays, shell, login, dashboard, screens,
 responsive. Read the header comment before adding to it.
 
+**The login screen keeps its own sheet**,
+[frontend/src/styles/login.css](frontend/src/styles/login.css), imported by the page
+itself. It is a full-bleed piece of artwork with a palette of its own, and the class
+names its design uses — `.brand`, `.feature`, `.divider`, `.signup` — are far too
+general to sit loose beside the rest of the application. Every rule in it is scoped
+under `.login-page`. Note that `app.css` loads *after* it, so a bare element selector
+there (`input:focus`, say) will win on source order: login rules that must hold are
+written with `.login-page` in front of them.
+
 **Dark mode** is two blocks of token overrides at the end of the file - every
 component is written against the tokens, so nothing else needed changing. There are
 three states: *system* (the default, follows the OS), *light* and *dark*, chosen on
@@ -513,11 +547,11 @@ Two rules hold the design together:
 2. **Status never speaks through colour alone.** Every pill carries its word, and the
    dashboard trend carries an arrow and a sign as well as a colour.
 
-**The login panel's picture** is `frontend/public/login-art.svg`, an illustration that
-ships so the screen looks finished. To use a photograph, drop it in as
-`frontend/public/login-art.jpg` and change `url('/login-art.svg')` to
-`url('/login-art.jpg')` in the `.login-art` rule. The washes layered over it keep the
-white text readable on any image.
+**The login screen's artwork is drawn, not photographed** — a gradient sky, a cloud
+bank and a temple silhouette in SVG, plus a CSS cloud-and-orbit illustration. Nothing
+is downloaded, so the first screen anyone sees never waits on an image. The Google
+mark is inline for the same reason: the login page makes no third-party request
+before anyone has signed in.
 
 The product name and tagline live in [frontend/src/brand.js](frontend/src/brand.js) -
 one edit to rename the application. The backend has its own copy for the Swagger title
@@ -527,11 +561,18 @@ Colours are taken from the supplied design: `#1a3a5f` navy rail, `#1e4e8c` prima
 action, `#3b82f6` accent, `#f7f9fc` canvas. The chart is blue Present and green
 Absent, as drawn.
 
-Two controls on the login screen - Google and Microsoft sign-in, and "Sign up" - are
-drawn because the design calls for them, but nothing is wired behind them: single
-sign-on is not configured and accounts are created by an Admin. Each one says so when
-it is used rather than doing nothing at all. If single sign-on is ever wanted, that is
-its own piece of work.
+Three controls on the login screen - **Google** sign-in, *Forgot password* and *Sign
+up* - are drawn because the design calls for them, but nothing is wired behind them:
+single sign-on is not configured, and accounts and password resets are an
+administrator's job. Each says what to do instead when it is used, rather than doing
+nothing at all. Microsoft sign-in was removed on request. If single sign-on is ever
+wanted, that is its own piece of work.
+
+**Dates on screen come from `frontend/src/dates.js`**, never from
+`toISOString().slice(0, 10)`. That returns the date in UTC, and east of Greenwich the
+UTC date is still yesterday for part of every morning - which once had attendance
+marked at 01:00 disappearing from the zone sheet, and bulk marking written to the
+previous day.
 
 ---
 
@@ -620,12 +661,29 @@ different name (**File > Project Structure > SDKs** shows it), either rename it 
 If no JDK 21 is listed at all: **SDKs > + > Add JDK** and point it at
 `C:\Program Files\Java\jdk-21`.
 
+### My photo does not show next to my name
+
+First check the account actually has one: a photo is not required, and initials are
+the correct display when there is none. **My Profile → Change photo** sets your own
+picture and the topbar follows immediately, without a reload.
+
+The control appears for ADMIN and OFFICE_ADMIN only, because `/api/users/**` is
+restricted to those two roles; other roles see the picture but cannot change it, and
+an administrator sets it for them from **User Account → Edit**.
+
+If a photo is on the account and still does not appear, check that
+`GET /api/auth/me` returns `photoUpdatedAt`. The client keys its image cache on that
+stamp and shows initials without it, so an older backend build - one from before the
+field was added - produces exactly this symptom. Restart the backend.
+
 ### "Upload failed" under the photo picker
 
 As of change set 22 the photo is sent by **Save changes** along with the rest of the
 form, not the moment it is picked, and a failure names its cause rather than saying
-only that it failed. If you see a bare "Upload failed" now, the frontend is stale -
-reload the dev server.
+only that it failed. Change set 24 fixed the specific case reported twice: a missing
+import meant the upload threw before any request was sent, and the message swallowed
+the reason. If you see a bare "Upload failed" now, the frontend is stale - reload the
+dev server.
 
 ### The older "Upload failed", for reference
 

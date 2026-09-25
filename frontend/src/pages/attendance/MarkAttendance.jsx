@@ -48,10 +48,9 @@ function maskAadhar(value) {
   return `XXXX XXXX ${d.slice(8)}`
 }
 
-export default function MarkAttendance({ onNotice, onError }) {
+export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNotice, onError }) {
   const [now, setNow] = useState(clock)
   const [query, setQuery] = useState('')
-  const [sewaType, setSewaType] = useState('ROSTER_SEWA')
 
   const [hits, setHits] = useState(null)
   const [selected, setSelected] = useState(null)
@@ -73,6 +72,28 @@ export default function MarkAttendance({ onNotice, onError }) {
       .search({ sewadarId, size: 10 })
       .then((res) => setLog(res.content || []))
       .catch(() => setLog([]))
+
+  /*
+   * The selected sewadar is re-read whenever the sewa type changes, because the
+   * card and the two buttons describe one particular (sewadar, date, sewa type)
+   * row - and that is a different row the moment the type does.
+   */
+  useEffect(() => {
+    if (!selected) return
+    let cancelled = false
+    attendanceApi
+      .status(selected.sewadarId, sewaType)
+      .then((fresh) => {
+        if (!cancelled) setSelected(fresh)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // Keyed on the id, not the object: refresh() replaces `selected` after every
+    // action, and depending on the object itself would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sewaType, selected?.sewadarId])
 
   const pick = async (hit) => {
     setSelected(hit)
@@ -142,6 +163,29 @@ export default function MarkAttendance({ onNotice, onError }) {
     }
   }
 
+  /*
+   * What the two state pills say on hover. Everything the pills used to print
+   * inline lives here instead, so the pill itself stays one short phrase.
+   */
+  const checkedInDetail = !selected
+    ? ''
+    : selected.checkedIn
+      ? [`Checked in at ${pretty(selected.inTime)}`, selected.centerPoint || selected.zoneName]
+          .filter(Boolean)
+          .join(' · ')
+      : 'Not checked in yet'
+
+  const checkedOutDetail = !selected
+    ? ''
+    : selected.checkedOut
+      ? [
+          `Checked out at ${pretty(selected.outTime)}`,
+          selected.hours != null ? `${hoursLabel(selected.hours)} of sewa` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : 'Not checked out yet'
+
   return (
     <div>
       <div className="mark-head">
@@ -186,6 +230,26 @@ export default function MarkAttendance({ onNotice, onError }) {
             Reset
           </button>
         </form>
+
+        {/*
+          Which sewa is being marked. It was fixed at Roster Sewa and invisible,
+          while the zone sheet let you pick any of the four - so the two screens
+          could be looking at different records for the same person and day.
+        */}
+        <div className="mark-sewa">
+          <label htmlFor="mark-sewa-type">Sewa type</label>
+          <select
+            id="mark-sewa-type"
+            value={sewaType}
+            onChange={(e) => setSewaType(e.target.value)}
+          >
+            {sewaTypes.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <p className="mark-example">
           Example: B00123 or Amit or 9876543210 or 1234 5678 9012 · marking for today; a day
           that was missed goes in under <strong>Manage Past Attendance</strong>.
@@ -296,32 +360,33 @@ export default function MarkAttendance({ onNotice, onError }) {
               Nothing is shown for a time or a place that does not exist yet, which is
               what removed the stray "-" the old panels displayed before check out.
             */}
+            {/*
+              Two states over two buttons, on the same two-column grid, so all four
+              cells are the same width and line up in a block.
+
+              Each state shows only what it is - Checked In, Checked Out - and keeps
+              the time, the place and the hours in its tooltip. Those details were
+              printed inline before, which made the two pills different widths and
+              pushed the whole row out of line with the buttons under it.
+            */}
             <div className="state-grid">
-              <div className={`state ${selected.checkedIn ? 'ok' : 'idle'}`}>
+              <div
+                className={`state ${selected.checkedIn ? 'ok' : 'idle'}`}
+                title={checkedInDetail}
+              >
                 <span className="state-icon">{selected.checkedIn ? '✓' : '○'}</span>
                 <span className="state-text">
-                  <strong>{selected.checkedIn ? 'Checked In' : 'Not Checked In'}</strong>
-                  {selected.checkedIn && (
-                    <span className="state-detail">{pretty(selected.inTime)}</span>
-                  )}
-                  {selected.checkedIn && (selected.centerPoint || selected.zoneName) && (
-                    <span className="state-detail">
-                      {selected.centerPoint || selected.zoneName}
-                    </span>
-                  )}
+                  {selected.checkedIn ? 'Checked In' : 'Not Checked In'}
                 </span>
               </div>
 
-              <div className={`state ${selected.checkedOut ? 'ok' : 'bad'}`}>
+              <div
+                className={`state ${selected.checkedOut ? 'ok' : 'bad'}`}
+                title={checkedOutDetail}
+              >
                 <span className="state-icon">{selected.checkedOut ? '✓' : '🕐'}</span>
                 <span className="state-text">
-                  <strong>{selected.checkedOut ? 'Checked Out' : 'Not Yet Checked Out'}</strong>
-                  {selected.checkedOut && (
-                    <span className="state-detail">{pretty(selected.outTime)}</span>
-                  )}
-                  {selected.hours != null && (
-                    <span className="state-detail">{hoursLabel(selected.hours)} of sewa</span>
-                  )}
+                  {selected.checkedOut ? 'Checked Out' : 'Not Yet Checked Out'}
                 </span>
               </div>
             </div>

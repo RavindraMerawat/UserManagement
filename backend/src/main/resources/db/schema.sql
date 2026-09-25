@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS sewadars (
   -- state and links
   badgeIssued         BIT(1)       NOT NULL DEFAULT b'0',
   badgeReceived       BIT(1)       NOT NULL DEFAULT b'0',
+  exempted            BIT(1)       NOT NULL DEFAULT b'0',
   active              BIT(1)       NOT NULL DEFAULT b'1',
   photoUpdatedAt      DATETIME(6),
   userId              BIGINT,
@@ -274,3 +275,30 @@ CREATE TABLE IF NOT EXISTS photos (
 --   attendance.status          PRESENT | HALF_DAY | LEAVE | ABSENT
 --   zone_change_requests.status PENDING | APPROVED | REJECTED | CANCELLED
 --   photos.ownerType           SEWADAR | USER
+
+-- ---------------------------------------------------------------------------
+-- Columns added after the first release.
+--
+-- Every CREATE above is IF NOT EXISTS, which does nothing to a table that is
+-- already there, so a new column on an existing table has to be added here.
+-- MySQL 8 has no ADD COLUMN IF NOT EXISTS, and this file runs on every start
+-- with continue-on-error false, so the add is made conditional by hand: look in
+-- INFORMATION_SCHEMA, build the statement only when the column is missing, and
+-- execute a harmless SELECT otherwise.
+--
+-- This runs during spring.sql.init, which is before Hibernate validates the
+-- entities - which is the only window in which it is any use.
+-- ---------------------------------------------------------------------------
+
+SET @hasExempted := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = 'sewadars'
+                       AND COLUMN_NAME = 'exempted');
+
+SET @addExempted := IF(@hasExempted = 0,
+    'ALTER TABLE sewadars ADD COLUMN exempted BIT(1) NOT NULL DEFAULT b''0'' AFTER badgeReceived',
+    'SELECT 1');
+
+PREPARE addExemptedStmt FROM @addExempted;
+EXECUTE addExemptedStmt;
+DEALLOCATE PREPARE addExemptedStmt;

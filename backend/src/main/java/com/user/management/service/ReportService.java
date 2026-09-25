@@ -78,7 +78,7 @@ public class ReportService {
                 from, to, sewadarId, zoneId, sewaType, scope.zoneIds(), scope.sewadarId());
 
         int daysInPeriod = (int) ChronoUnit.DAYS.between(from, to) + 1;
-        List<MonthlyReportRow> rows = raw.stream().map(r -> toRow(r, daysInPeriod)).toList();
+        List<MonthlyReportRow> rows = raw.stream().map(r -> toRow(r, daysInPeriod, to)).toList();
 
         Map<String, Long> statusBreakdown = attendanceRepository
                 .countByStatus(from, to, scope.zoneIds(), scope.sewadarId()).stream()
@@ -121,7 +121,7 @@ public class ReportService {
                 "Construction Sewa Report - " + ym.format(MONTH_TITLE));
     }
 
-    private MonthlyReportRow toRow(MonthlySummaryRow r, int daysInPeriod) {
+    private MonthlyReportRow toRow(MonthlySummaryRow r, int daysInPeriod, LocalDate asAt) {
         long present = nz(r.getPresentDays());
         long half = nz(r.getHalfDays());
         double effective = present + (half * 0.5);
@@ -133,6 +133,8 @@ public class ReportService {
                 r.getSewadarName(),
                 r.getZoneName(),
                 r.getDepartment(),
+                ageAt(r.getBirthDate(), asAt),
+                Boolean.TRUE.equals(r.getExempted()),
                 nz(r.getTotalRecords()),
                 present,
                 half,
@@ -143,6 +145,17 @@ public class ReportService {
                 round(r.getTotalHours() == null ? 0.0 : r.getTotalHours()),
                 round(effective),
                 percent);
+    }
+
+    /**
+     * Age in whole years at the end of the period the report covers, so a report
+     * re-run next year does not silently age everyone in it.
+     */
+    private Integer ageAt(LocalDate birthDate, LocalDate asAt) {
+        if (birthDate == null) {
+            return null;
+        }
+        return java.time.Period.between(birthDate, asAt).getYears();
     }
 
     private MonthlyReportResponse.Totals totalsOf(List<MonthlyReportRow> rows) {

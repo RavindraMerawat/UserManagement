@@ -11,6 +11,7 @@ export default function Attendance() {
   const { canMarkAttendance, isSewadar, canManageSewadars } = useAuth()
   const [tab, setTab] = useState(canMarkAttendance ? 'mark' : 'records')
 
+  const [sewaType, setSewaType] = useState('ROSTER_SEWA')
   const [zones, setZones] = useState([])
   const [options, setOptions] = useState({ sewaTypes: [], attendanceStatuses: [] })
   const [error, setError] = useState('')
@@ -30,9 +31,19 @@ export default function Attendance() {
     { key: 'records', label: isSewadar ? 'My Attendance' : 'Records' },
   ].filter(Boolean)
 
+  /*
+   * The sewa type lives here, above the tabs, because an attendance row is keyed
+   * by (sewadar, date, sewa type) - so two tabs set to different types are looking
+   * at two different records for the same person on the same day. Marking someone
+   * in under Construction Sewa on one tab left them reading "not checked in" on
+   * another, and checking them in there wrote a second row. One value, shared, is
+   * what stops that; each tab shows it so nobody has to guess which is in force.
+   */
   const shared = {
     zones,
     sewaTypes: options.sewaTypes || [],
+    sewaType,
+    setSewaType,
     onNotice: (message) => {
       setNotice(message)
       setError('')

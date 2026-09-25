@@ -5,7 +5,8 @@ import { useAuth } from '../auth/AuthContext'
 import Alert from '../components/Alert'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
-import { BarBreakdown, EmptyRow, Field } from '../components/Bits'
+import { EmptyRow, Field } from '../components/Bits'
+import { fromIso, monthStartIso, todayIso } from '../dates'
 
 const REPORT_KINDS = [
   { key: 'monthly', label: 'Monthly attendance', loader: reportApi.monthly },
@@ -20,7 +21,7 @@ const MONTHS = [
 ]
 
 const now = new Date()
-const isoToday = () => new Date().toISOString().slice(0, 10)
+const isoToday = () => todayIso()
 
 export default function Reports() {
   const { isSewadar } = useAuth()
@@ -31,7 +32,7 @@ export default function Reports() {
     month: now.getMonth() + 1,
     zoneId: '',
     sewaType: '',
-    fromDate: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10),
+    fromDate: monthStartIso(),
     toDate: isoToday(),
   })
 
@@ -218,6 +219,13 @@ export default function Reports() {
           </button>
           {report && (
             <>
+              {/*
+                The sheet people actually hand round: S.No, GR. No, Name, Age, Zone
+                and the month's total hours.
+              */}
+              <button type="button" className="btn ghost" onClick={() => download('pdf')}>
+                Download PDF
+              </button>
               <button type="button" className="btn ghost" onClick={() => download('excel')}>
                 Download Excel
               </button>
@@ -261,119 +269,115 @@ export default function Reports() {
   )
 }
 
+/** 2026-09-01 -> 1 Sep 2026, which is how a date is read rather than stored. */
+function niceDate(iso) {
+  if (!iso) return ''
+  return fromIso(iso).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+/**
+ * The report as one sheet: what it covers, then the figures.
+ *
+ * <p>The summary tiles and the two breakdown panels that used to sit above the
+ * table are gone. They repeated the table and nothing else - every figure in them
+ * is a column here or a number in the totals row - and five tiles wrapping four
+ * and one, over two panels each drawing a single bar, was a lot of page saying
+ * very little.</p>
+ */
 function ReportView({ report }) {
   const t = report.totals
+
   return (
-    <>
-      <div className="card">
-        <h3 style={{ marginBottom: 4 }}>{report.title}</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          {report.fromDate} to {report.toDate} &middot; {report.daysInPeriod} days &middot;{' '}
-          {report.zoneName} &middot; {report.sewaTypeLabel}
-        </p>
-        <div className="stat-grid" style={{ marginBottom: 0 }}>
-          <div className="stat">
-            <div className="label">Sewadars</div>
-            <div className="value">{t.sewadarCount}</div>
-          </div>
-          <div className="stat" style={{ borderLeftColor: '#059669' }}>
-            <div className="label">Present days</div>
-            <div className="value">{t.presentDays}</div>
-          </div>
-          <div className="stat" style={{ borderLeftColor: '#dc2626' }}>
-            <div className="label">Absent days</div>
-            <div className="value">{t.absentDays}</div>
-          </div>
-          <div className="stat" style={{ borderLeftColor: '#2563eb' }}>
-            <div className="label">Total sewa hours</div>
-            <div className="value">{t.totalHours}</div>
-          </div>
-          <div className="stat" style={{ borderLeftColor: '#d97706' }}>
-            <div className="label">Average attendance</div>
-            <div className="value">{t.averageAttendancePercent}%</div>
-          </div>
+    <div className="card report-sheet">
+      <header className="report-head">
+        <div className="report-head-main">
+          <h3 className="report-title">{report.title}</h3>
+          <p className="report-period">
+            {niceDate(report.fromDate)} to {niceDate(report.toDate)} · {report.daysInPeriod} days
+          </p>
         </div>
-      </div>
+        {/* What was asked for, as chips, so the filters that produced this sheet
+            are readable at a glance instead of a run-on grey sentence. */}
+        <div className="report-chips">
+          <span className="report-chip">{report.zoneName || 'All zones'}</span>
+          <span className="report-chip">{report.sewaTypeLabel || 'All sewa types'}</span>
+          <span className="report-chip strong">
+            {t.sewadarCount} sewadar{t.sewadarCount === 1 ? '' : 's'}
+          </span>
+        </div>
+      </header>
 
-      <div className="grid-2">
-        <div className="card">
-          <h3>By status</h3>
-          <BarBreakdown data={report.statusBreakdown} />
-        </div>
-        <div className="card">
-          <h3>By sewa type</h3>
-          <BarBreakdown data={report.sewaTypeBreakdown} />
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Sewadar wise detail</h3>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Badge</th>
-                <th>Sewadar</th>
-                <th>Zone</th>
-                <th>Department</th>
-                <th>Present</th>
-                <th>Half day</th>
-                <th>Leave</th>
-                <th>Absent</th>
-                <th>Roster</th>
-                <th>Construction</th>
-                <th>Hours</th>
-                <th>Effective</th>
-                <th>Attendance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.rows.length === 0 ? (
-                <EmptyRow colSpan={14}>No attendance was marked in this period</EmptyRow>
-              ) : (
-                report.rows.map((row, index) => (
-                  <tr key={row.sewadarId}>
-                    <td>{index + 1}</td>
-                    <td>{row.badgeNumber}</td>
-                    <td>{row.sewadarName}</td>
-                    <td>{row.zoneName}</td>
-                    <td className="muted">{row.department || '-'}</td>
-                    <td>{row.presentDays}</td>
-                    <td>{row.halfDays}</td>
-                    <td>{row.leaveDays}</td>
-                    <td>{row.absentDays}</td>
-                    <td>{row.rosterSewaDays}</td>
-                    <td>{row.constructionSewaDays}</td>
-                    <td>{row.totalHours}</td>
-                    <td>{row.effectiveDays}</td>
-                    <td>
-                      <strong>{row.attendancePercent}%</strong>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            {report.rows.length > 0 && (
-              <tfoot>
-                <tr>
-                  <td colSpan={5}>Total ({t.sewadarCount} sewadars)</td>
-                  <td>{t.presentDays}</td>
-                  <td>{t.halfDays}</td>
-                  <td>{t.leaveDays}</td>
-                  <td>{t.absentDays}</td>
-                  <td>{t.rosterSewaDays}</td>
-                  <td>{t.constructionSewaDays}</td>
-                  <td>{t.totalHours}</td>
-                  <td>-</td>
-                  <td>{t.averageAttendancePercent}%</td>
+      <div className="table-wrap">
+        <table className="table-md report-table">
+          <thead>
+            <tr>
+              <th className="col-num">#</th>
+              <th>Badge</th>
+              <th>Sewadar</th>
+              <th>Zone</th>
+              <th>Department</th>
+              <th className="num">Present</th>
+              <th className="num">Half day</th>
+              <th className="num">Leave</th>
+              <th className="num">Absent</th>
+              <th className="num">Roster</th>
+              <th className="num">Construction</th>
+              <th className="num">Hours</th>
+              <th className="num">Effective</th>
+              <th className="num">Attendance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.rows.length === 0 ? (
+              <EmptyRow colSpan={14}>No attendance was marked in this period</EmptyRow>
+            ) : (
+              report.rows.map((row, index) => (
+                <tr key={row.sewadarId}>
+                  <td className="col-num">{index + 1}</td>
+                  <td>{row.badgeNumber}</td>
+                  <td className="cell-wrap">
+                    <strong>{row.sewadarName}</strong>
+                  </td>
+                  <td>{row.zoneName}</td>
+                  <td className="muted">{row.department || '-'}</td>
+                  <td className="num">{row.presentDays}</td>
+                  <td className="num">{row.halfDays}</td>
+                  <td className="num">{row.leaveDays}</td>
+                  <td className="num">{row.absentDays}</td>
+                  <td className="num">{row.rosterSewaDays}</td>
+                  <td className="num">{row.constructionSewaDays}</td>
+                  <td className="num">{row.totalHours}</td>
+                  <td className="num">{row.effectiveDays}</td>
+                  <td className="num">
+                    <strong>{row.attendancePercent}%</strong>
+                  </td>
                 </tr>
-              </tfoot>
+              ))
             )}
-          </table>
-        </div>
+          </tbody>
+          {report.rows.length > 0 && (
+            <tfoot>
+              <tr>
+                <td colSpan={5}>Total ({t.sewadarCount} sewadars)</td>
+                <td className="num">{t.presentDays}</td>
+                <td className="num">{t.halfDays}</td>
+                <td className="num">{t.leaveDays}</td>
+                <td className="num">{t.absentDays}</td>
+                <td className="num">{t.rosterSewaDays}</td>
+                <td className="num">{t.constructionSewaDays}</td>
+                <td className="num">{t.totalHours}</td>
+                <td className="num">-</td>
+                <td className="num">{t.averageAttendancePercent}%</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
       </div>
-    </>
+    </div>
   )
 }
 

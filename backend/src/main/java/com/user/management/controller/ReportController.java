@@ -1,10 +1,12 @@
 package com.user.management.controller;
 
+import com.user.management.AppInfo;
 import com.user.management.entity.SewaType;
 import com.user.management.integration.NotificationService;
 import com.user.management.model.MonthlyReportResponse;
 import com.user.management.model.ShareReportRequest;
 import com.user.management.model.ShareResult;
+import com.user.management.report.PdfReportWriter;
 import com.user.management.report.ReportExporter;
 import com.user.management.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,6 +44,7 @@ public class ReportController {
 
     private final ReportService reportService;
     private final ReportExporter exporter;
+    private final PdfReportWriter pdfWriter;
     private final NotificationService notificationService;
 
     @Operation(summary = "Monthly attendance report")
@@ -93,6 +96,20 @@ public class ReportController {
                                                @RequestParam(required = false) SewaType sewaType) {
         MonthlyReportResponse report = reportService.monthly(year, month, zoneId, sewadarId, sewaType);
         return download(exporter.toExcel(report), exporter.fileName(report, "xlsx"), XLSX_MIME);
+    }
+
+    @Operation(summary = "Download the sewadar attendance sheet as a PDF",
+            description = "S.No, GR. No (badge number), Name, Age, Zone, and the total "
+                    + "hours each sewadar has in the month the report covers.")
+    @GetMapping("/monthly/pdf")
+    public ResponseEntity<byte[]> monthlyPdf(@RequestParam int year,
+                                             @RequestParam int month,
+                                             @RequestParam(required = false) Long zoneId,
+                                             @RequestParam(required = false) Long sewadarId,
+                                             @RequestParam(required = false) SewaType sewaType) {
+        MonthlyReportResponse report = reportService.monthly(year, month, zoneId, sewadarId, sewaType);
+        return download(pdfWriter.write(report, AppInfo.NAME),
+                exporter.fileName(report, "pdf"), MediaType.APPLICATION_PDF_VALUE);
     }
 
     @Operation(summary = "Download a report as CSV")

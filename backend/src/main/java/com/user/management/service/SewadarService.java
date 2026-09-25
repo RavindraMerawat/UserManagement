@@ -1,5 +1,6 @@
 package com.user.management.service;
 
+import com.user.management.entity.Gender;
 import com.user.management.entity.AttendanceStatus;
 import com.user.management.entity.Role;
 import com.user.management.entity.Sewadar;
@@ -83,12 +84,13 @@ public class SewadarService {
     @Transactional(readOnly = true)
     public PageResponse<SewadarResponse> dashboardList(AttendanceStatus status,
                                                        LocalDate onDate,
+                                                       Gender gender,
                                                        Pageable pageable) {
         DataScope scope = currentUser.scope();
         LocalDate date = onDate == null ? LocalDate.now() : onDate;
         return PageResponse.of(
                 sewadarRepository.findForDashboard(
-                        status, date, scope.zoneIds(), scope.sewadarId(), pageable),
+                        status, date, scope.zoneIds(), scope.sewadarId(), gender, pageable),
                 this::toResponse);
     }
 
@@ -218,6 +220,7 @@ public class SewadarService {
                 .department(trimToNull(request.department()))
                 .primarySewaType(request.primarySewaType())
                 .joiningDate(request.joiningDate())
+                .exempted(request.exempted() != null && request.exempted())
                 .active(request.active() == null || request.active())
                 .build();
 
@@ -282,6 +285,9 @@ public class SewadarService {
         sewadar.setDepartment(trimToNull(request.department()));
         sewadar.setPrimarySewaType(request.primarySewaType());
         sewadar.setJoiningDate(request.joiningDate());
+        if (request.exempted() != null) {
+            sewadar.setExempted(request.exempted());
+        }
         if (request.active() != null) {
             sewadar.setActive(request.active());
         }

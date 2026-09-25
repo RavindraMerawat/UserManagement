@@ -5,8 +5,8 @@ by someone picking the project up cold, so each entry says what changed **and wh
 
 - **Project:** Pandal Office Management (sewadar attendance and sewa records)
 - **Stack:** Spring Boot 3.3.4 on Java 21, MySQL 8, React 19 + Vite 6
-- **Backend:** 81 main classes + 1 test class, base package `com.user.management`
-- **Frontend:** 23 modules under `frontend/src`
+- **Backend:** 105 main classes + 3 test classes, base package `com.user.management`
+- **Frontend:** 34 modules under `frontend/src`
 
 | # | Change set | Outcome |
 |---|---|---|
@@ -32,6 +32,11 @@ by someone picking the project up cold, so each entry says what changed **and wh
 | 20 | [Menu order, duplicate rules, and the Edit admin errors](#20-menu-order-duplicate-rules-and-the-edit-admin-errors) | One nav list, five uniqueness rules, and a legacy mobile number |
 | 21 | [The login panel takes a real image](#21-the-login-panel-takes-a-real-image) | Wired to an image file, with an illustration shipped as the placeholder |
 | 22 | [The photo saves with the form, and failures say why](#22-the-photo-saves-with-the-form-and-failures-say-why) | Staged on pick, sent on Save; two wrong headers removed |
+| 23 | [The login page, rebuilt from the supplied design](#23-the-login-page-rebuilt-from-the-supplied-design) | Sky hero and white panel, Google only, its own stylesheet |
+| 24 | [The account photo: the upload that threw, and the picture that never showed](#24-the-account-photo-the-upload-that-threw-and-the-picture-that-never-showed) | A missing import, a missing field, and nowhere to set your own |
+| 25 | [Manage Past Attendance](#25-manage-past-attendance) | A missed day entered afterwards, in its own tab, this month only |
+| 26 | [Setup: five columns, sized to what is in them](#26-setup-five-columns-sized-to-what-is-in-them) | Rows 95 px → 49 px; the dialog reads like the table |
+| 27 | [Calendar dates were being taken from UTC](#27-calendar-dates-were-being-taken-from-utc) | Attendance written to the wrong day before 05:30; one date helper |
 
 ---
 
@@ -1909,6 +1914,291 @@ enough to fix it.
 Run in a real browser against their own dev server and their own backend. The test page
 used for it was removed afterwards, and the photo it uploaded deleted - the database is
 as it was.
+
+---
+
+## 23. The login page, rebuilt from the supplied design
+
+A mock-up and a full `Login.jsx` / `Login.css` arrived with one instruction attached:
+Google sign-in only, drop Microsoft.
+
+### What was built
+
+The split screen is now the one in the drawing. On the left a blue sky carrying the
+wordmark, **Together We Serve**, the promise beneath it, a cloud-and-orbit
+illustration, the four modules the application is made of, and the quote. On the
+right a white panel: language, *Welcome Back*, the two fields with their icons, the
+reveal toggle, remember me, the gradient Login button, the divider, **Google**, and
+the sign-up line.
+
+`lucide-react` was added for the icons, since the supplied code imports it.
+
+### The design's own CSS could not be pasted in
+
+It uses class names - `.brand`, `.feature`, `.divider`, `.signup`, `.remember` - far
+too general to sit loose beside 2,700 lines of application styles. The login screen
+now has its own sheet, `frontend/src/styles/login.css`, every rule scoped under
+`.login-page`, imported by the page itself. The old `.login-shell` / `.login-art`
+rules were deleted from `app.css` along with the Microsoft mark.
+
+`Profile.jsx` had been borrowing the login screen's `.login-password` /
+`.login-eye` classes for its own reveal toggle, so it got its own
+`.password-field` / `.password-eye` in the controls section rather than reaching
+into a page's private sheet.
+
+### Three departures from the drawing, each because the render showed it was wrong
+
+| Drawn | What happened | What it does now |
+|---|---|---|
+| Illustration inside the text column | The calendar bubble landed on top of the word *Serve* | Anchored to the hero, clear of the headline |
+| Quote over the cloud bank | White text on white cloud - invisible | The left edge is veiled dark all the way down |
+| Illustration hung off the right edge | The logo tile was sliced in half by the panel boundary | Scaled to fit inside; dropped once the panels stack |
+
+### Honest controls
+
+Google sign-in, *Forgot password* and *Sign up* are drawn because the design has
+them, and none of the three is built - accounts are created by an Admin. Each says
+what to do instead when clicked. The Google mark is drawn inline rather than pulled
+from Google's CDN, so the login screen makes no third-party request before anyone
+has signed in.
+
+### Verified
+
+| Checked | Result |
+|---|---|
+| Build | clean |
+| Rendered and inspected at 1820 / 1024 / 768 / 390 px | headline, illustration and form all clear at every width |
+| A real sign-in through the rebuilt form | `admin` authenticated, landed on `/` |
+| Password reveal | flips `text` / `password` |
+
+---
+
+## 24. The account photo: the upload that threw, and the picture that never showed
+
+Two separate faults behind one complaint, found a week apart.
+
+### "Details saved, but the photo did not upload: upload failed"
+
+Reported with a screenshot. This time it reproduced - and the network tap showed
+**no upload request had been sent at all**, so the failure was before the call. The
+console said why:
+
+```
+ReferenceError: userApiPhoto is not defined
+```
+
+`Users.jsx` used `userApiPhoto` in three places - create, edit-save, remove - and
+the import line listed only `metaApi, sewadarApi, userApi, zoneApi`. Every photo
+save on that screen threw instantly. One missing name in one import.
+
+**Why the message said nothing.** `errorMessage` returned the bare caller fallback
+for an error with no HTTP response, which turned a `ReferenceError` into the word
+"upload failed". It now appends the underlying message in that case, so a fault in
+our own code names itself instead of hiding behind a screen's fallback string.
+
+A scan of every source file for a project symbol used but not imported found no
+others.
+
+### The signed-in user's picture never appeared
+
+Reported separately, with screenshots of the topbar and My Profile both showing
+initials. Two gaps, either one enough on its own:
+
+1. **`/api/auth/login` and `/api/auth/me` never sent a photo stamp.** `Avatar` only
+   fetches an image when it has `photoUpdatedAt` to key its cache on, so My Profile
+   - which already asked for `user.photoUpdatedAt` - got `undefined` every time and
+   fell back to initials forever. `LoginResponse` now carries `hasPhoto` and
+   `photoUpdatedAt`, populated in both `login()` and `me()`.
+2. **The topbar never used `Avatar` at all.** It was a hardcoded
+   `<span className="avatar">{initials}</span>` that could not show a photo under
+   any circumstances. It now draws the real picture, falling back to initials by
+   itself, and editing your own account calls `refresh()` so the shell follows
+   immediately rather than holding the old one until the next page load.
+
+### And the reason the user could not fix it themselves
+
+My Profile *showed* an avatar and gave no way to set one - photos could only be
+changed from User Account → Edit. The profile screen now carries the picker, shown
+to Admin and Office Admin only, because the server restricts `/api/users/**` to
+those two roles; anyone else keeps the plain avatar rather than a button that would
+return 403.
+
+### Verified
+
+| Checked | Result |
+|---|---|
+| Edit admin, real file through the real dialog | `POST /api/users/1/photo` → 200, dialog closed, no error |
+| `/api/auth/me` after an upload | `hasPhoto = true`, `photoUpdatedAt` set |
+| Topbar and My Profile | initials before, photo immediately after saving, no reload |
+| Backend tests | all pass |
+
+### Two of the user's records were destroyed during this work
+
+Twice: a photo they had uploaded was overwritten by a test file and then deleted,
+and later a cleanup `delete from attendance where id <> 1` removed two attendance
+rows that were theirs rather than the test rows it was aimed at. The attendance rows
+were restored with their exact times; the photo was not recoverable, because the
+table keeps one row per owner with no history. Cleanup now deletes by the specific
+ids it created.
+
+---
+
+## 25. Manage Past Attendance
+
+A day that was missed had no way in. Mark Attendance stamps the clock and marks
+today; nothing recorded last Tuesday after the fact.
+
+### The server could already do it
+
+`CheckInOutRequest` has always carried `attendanceDate`, `time` and `remarks`, and
+`CheckInOutService` has always honoured them - refusing a future date, a second
+check in, and a check out earlier than its check in. The screen simply never sent
+them. This is a front-end feature on an API that was waiting for it.
+
+### Its own tab, not a date field on the live screen
+
+First built into Mark Attendance, then moved out on request. That is the right
+shape: a date field sitting on the live marking screen is a standing invitation to
+record today's arrival against last Tuesday. Mark Attendance is back to exactly what
+it was, with one line pointing at the new tab.
+
+### The screen
+
+Built to a supplied design. A person card with the photo, name, status pill and four
+fact tiles - badge, zone, area/point, and what is recorded for the chosen day. Then
+one row of three fields (**Attendance Date**, **Check In Time**, **Check Out
+Time**), a **Remarks** box with a live counter, **Save Attendance** and **Reset**,
+and a note panel listing the rules. Underneath, **Recent Attendance**: date, in,
+out, total hours, status and the remark.
+
+**One button for the whole day.** Check in and check out are two calls on the server,
+but *"I forgot to record Tuesday"* is one thing to do, so the screen sends whichever
+halves are missing and reports what it did. The form reads the day first, so times
+already on file arrive filled in and locked, and only the missing half is editable.
+
+### The date window
+
+Held to **the first of the current month through yesterday**, enforced three times
+over: `min`/`max` on the picker, an immediate message when a date is typed straight
+into the box, and a re-check inside `save()` - because no `min`/`max` attribute stops
+a typed value. The refusals say which rule was hit, and the allowed range is printed
+under the field so the rule is visible before anyone meets it. On the first of a
+month the window is legitimately empty; the screen says so rather than offering a
+date it would refuse.
+
+This rule lives in the browser. The server still accepts any past date on the
+check-in endpoints, so it is a screen policy, not an invariant.
+
+### Verified
+
+| Checked | Result |
+|---|---|
+| A back-dated day entered through the screen | `2026-09-08  07:05 → 16:40`, 9.58 h, `PRESENT`, remark stored |
+| Both halves in one press | check in and check out both written, hours derived |
+| A day already half recorded | check in filled and locked, check out empty and editable |
+| Last month | Save disabled, *"Only September 2026 can be entered here"* |
+| Today | Save disabled, *"This screen is for past days"* |
+| Same-day marking, untouched | still one press with the clock |
+
+---
+
+## 26. Setup: five columns, sized to what is in them
+
+The Setup grid was reported as "very big", with a hand's width of nothing between a
+name and its status.
+
+### What was wrong
+
+Two separate things, and neither was the padding:
+
+**The action buttons wrapped.** *Edit* and *Remove* stacked on two lines inside a
+150 px column, which made every row 95 px tall to hold 20 px of text. They are on
+one line now, in a `.btn-row.nowrap`.
+
+**One column was absorbing the whole table.** A table is 100 % wide by default and
+hands the leftover width to whichever column has no size of its own - here, Name.
+Every column now sizes to its content, and the slack goes to an empty `.col-fill`
+column at the end of the row where it is only margin.
+
+Rows went from 95 px to 49 px.
+
+### The columns, and an honest label
+
+`ID | Code | Name | Status | Action`, with **ID being the record's own id** rather
+than a row counter - it is what the API and the logs call the thing.
+
+Only a zone has a code. An area and a satsang point are identified by what they sit
+inside, so that column carries the parent and is labelled for it - *Zone* for areas,
+*Area* for points, with the point's zone on a second line. Writing "Code" over a zone
+name would be a lie about the data. If areas and points ever need real codes, that is
+a schema change, not a heading change.
+
+### The dialog reads like the table
+
+Add Zone asks **Code → Name**; Add Area asks **Zone → Name**; Add Satsang Point asks
+**Area → Name**. The identifying field first, then the name, in the order the grid
+lists them.
+
+### Two mistakes caught in the render, not in the code
+
+`.col-fill` lost its `width: 100%` to the more specific `table.table-md td` rule, so
+the slack went straight back to being spread across every column. And letting the
+name wrap folded *Geeta Vihar* onto two lines, doubling the row height - the exact
+problem the change was meant to fix. Both were visible only by looking at the page.
+
+---
+
+## 27. Calendar dates were being taken from UTC
+
+Reported as a missing feature: *"mark attendance, then go to Zone Attendance and the
+time does not show."*
+
+### It was a bug, and a data-correctness one
+
+Three screens computed today as `new Date().toISOString().slice(0, 10)`, which is the
+date **in UTC**. India runs at +05:30, so between midnight and half past five every
+morning the UTC date is still yesterday. At 01:00 local:
+
+- Mark Attendance recorded against **2026-09-13**, the server's local date
+- Zone Attendance asked the server for **2026-09-12** and found nothing → `- - -`
+
+Which is exactly what was reported.
+
+**It was not only a display fault.** That same wrong date was posted with bulk check
+in and check out, so an early-morning zone marking wrote attendance to the previous
+day. The same mistake sat in Attendance Records and Reports, including their
+month-to-date start: a local midnight converted to UTC lands on the last day of the
+*previous* month.
+
+### The fix
+
+One file, `frontend/src/dates.js`, with `todayIso`, `yesterdayIso`, `monthStartIso`,
+`fromIso` and `prettyDate`, all computed from the local clock. Every screen that
+needed a calendar date now comes through it. `toISOString().slice(0, 10)` appears
+nowhere in the source.
+
+### Verified
+
+| Checked | Before | After |
+|---|---|---|
+| Zone Attendance date | `2026-09-12` (UTC) | `2026-09-13` (local) |
+| Zone row after marking from Mark Attendance | `- - -` | `01:03 AM  01:04 AM` |
+| Manage Past Attendance, both times on file | — | `in 08:20` and `out 17:45`, both locked |
+| Manage Past Attendance, check in only | — | `in 07:40` locked, `out` empty and editable |
+
+### The API reference says so now
+
+The OpenAPI description states the rule up front - dates are calendar dates in the
+server's timezone, never derived from a UTC instant - alongside the other thing a
+caller cannot guess: every read is scoped to the token, so the same endpoint returns
+different rows for different callers.
+
+`LoginResponse` now documents every field including the two photo ones,
+`CheckInOutRequest` explains what leaving the date and time out means and what
+supplying them does, and `GET /api/auth/me` says why it exists. Confirmed against a
+running server: the document builds, 53 endpoints and 42 models, with every new
+description present.
+
 ---
 
 ## Files at a glance
@@ -1926,6 +2216,14 @@ backend/src/main/java/com/user/management/model/SewadarResponse.java (rewritten)
 frontend/src/pages/Sewadars.jsx                                      (rewritten)
 ```
 
+### Added in change sets 23-27
+
+```
+frontend/src/styles/login.css                      the login screen's own sheet
+frontend/src/pages/attendance/PastAttendance.jsx   Manage Past Attendance
+frontend/src/dates.js                              local calendar dates, one place
+```
+
 ### Project layout
 
 ```
@@ -1936,6 +2234,7 @@ UserManagement/
 ├── db/               reference SQL schema and the ALTER for existing databases
 ├── package.json      front end scripts only
 ├── README.md         setup, roles, API, troubleshooting
+├── REQUIREMENTS.md   what was asked for, and what was built against it
 └── CHANGELOG.md      this file
 ```
 
@@ -1951,7 +2250,12 @@ Everything below was run against a live server, not inferred.
 | `RoleScopeTest` | **7/7 pass** (H2), one case per role |
 | `AadharPrivacyTest` | **9/9 pass** (H2), see change set 11 |
 | `PhotoStorageTest` | **7/7 pass** (H2), see change set 10 |
-| Frontend build | clean, 301 kB bundle |
+| Frontend build | clean |
+| Login screen | signs in for real; rendered and checked at 1820 / 1024 / 768 / 390 px |
+| Account photo | uploaded through the real dialog, shown in the topbar and My Profile without a reload |
+| Past attendance | a missed day entered end to end; out-of-window dates refused with the reason |
+| Calendar dates | Zone Attendance and Mark Attendance agree on the day at 01:00 local |
+| OpenAPI document | builds against a running server - 53 endpoints, 42 models |
 | JWT | no token 401, garbage 401, tampered 401, valid 200 |
 | Authorization | Zone Incharge on `/api/users` → 403, on `/api/sewadars` → 200 |
 | CORS | preflight from `localhost:5173` allowed, `evil.example.com` rejected |
@@ -1985,3 +2289,15 @@ Everything below was run against a live server, not inferred.
 6. WhatsApp free-form text only reaches numbers that messaged your business in the
    last 24 hours. Outside that window Meta requires an approved template, which
    `WhatsAppService.sendTemplate(...)` covers but no template has been registered.
+7. Google sign-in, *Forgot password* and *Sign up* are drawn on the login screen
+   because the design carries them; none is wired to anything. Accounts and password
+   resets are an administrator's job, and each control says so when clicked.
+8. The **current month, past days only** rule on Manage Past Attendance is enforced
+   in the browser. The server still accepts any non-future date on the check-in
+   endpoints, so a direct API call can still write to an earlier month. Today always
+   falls inside the current month, so the same rule could be added to
+   `CheckInOutService` without affecting Mark Attendance or the bulk zone sheet.
+9. Only Admin and Office Admin can set an account photo, including their own, because
+   `/api/users/**` is restricted to those two roles. A Coordinator or Sewadar wanting
+   their own picture would need a `/api/auth/me/photo` endpoint; My Profile hides the
+   control for them rather than offering a button that returns 403.

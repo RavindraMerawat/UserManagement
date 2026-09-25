@@ -5,12 +5,8 @@ import Alert from '../../components/Alert'
 import Modal from '../../components/Modal'
 import Spinner from '../../components/Spinner'
 import { Badge, EmptyRow, Field, Pager } from '../../components/Bits'
+import { monthStartIso, todayIso } from '../../dates'
 
-const today = () => new Date().toISOString().slice(0, 10)
-const monthStart = () => {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-}
 
 function pretty(time) {
   if (!time) return '-'
@@ -33,8 +29,8 @@ export default function AttendanceRecords({
   onError,
 }) {
   const [filters, setFilters] = useState({
-    fromDate: monthStart(),
-    toDate: today(),
+    fromDate: monthStartIso(),
+    toDate: todayIso(),
     zoneId: '',
     sewaType: '',
     status: '',
@@ -285,7 +281,7 @@ export default function AttendanceRecords({
               <Field label="Date" required>
                 <input
                   type="date"
-                  max={today()}
+                  max={todayIso()}
                   value={editing.attendanceDate}
                   onChange={(e) => setEditing({ ...editing, attendanceDate: e.target.value })}
                   required

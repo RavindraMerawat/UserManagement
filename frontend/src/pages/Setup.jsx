@@ -191,11 +191,18 @@ export default function Setup() {
                 <th>Name</th>
                 <th className="col-status">Status</th>
                 {canManageSewadars && <th className="col-action">Action</th>}
+                {/*
+                  The spare width goes here, at the end. Without it the table
+                  stretches to fill the card by growing whichever column has no
+                  size of its own - which put a hand's width of nothing between
+                  the name and its status.
+                */}
+                <th className="col-fill" aria-hidden="true" />
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <EmptyRow colSpan={canManageSewadars ? 5 : 4}>
+                <EmptyRow colSpan={canManageSewadars ? 6 : 5}>
                   {tab === 'zones'
                     ? 'No zones yet.'
                     : tab === 'areas'
@@ -246,6 +253,7 @@ export default function Setup() {
                         </div>
                       </td>
                     )}
+                    <td className="col-fill" />
                   </tr>
                 ))
               )}
@@ -278,18 +286,14 @@ export default function Setup() {
           <form id="setup-form" onSubmit={onSave} style={{ display: 'grid', gap: 14 }}>
             <Alert kind="error">{formError}</Alert>
 
-            <Field label="Name" required>
-              <input
-                autoFocus
-                value={editing.name}
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                required
-              />
-            </Field>
-
+            {/*
+              The identifying field first, then the name - the same order the grid
+              lists them in, so the form reads the way the table does.
+            */}
             {editing.kind === 'zones' && (
               <Field label="Code" required>
                 <input
+                  autoFocus
                   value={editing.code || ''}
                   onChange={(e) => setEditing({ ...editing, code: e.target.value })}
                   required
@@ -333,6 +337,15 @@ export default function Setup() {
                 )}
               </Field>
             )}
+
+            <Field label="Name" required>
+              <input
+                autoFocus={editing.kind !== 'zones'}
+                value={editing.name}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                required
+              />
+            </Field>
 
             <label className="checkline">
               <input

@@ -16,19 +16,13 @@ import Alert from '../../components/Alert'
 import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
 import { Badge, EmptyRow } from '../../components/Bits'
+import { fromIso, monthStartIso, prettyDate, todayIso, yesterdayIso } from '../../dates'
 
 /** The server accepts 400; the box is capped shorter so the counter means something. */
 const REMARKS_MAX = 200
 
-/** Today as yyyy-mm-dd in local time, which is what a date input wants. */
-const today = () => new Date().toLocaleDateString('en-CA')
-
-/** Yesterday, the day this screen opens on and the latest it will accept. */
-const yesterday = () => {
-  const d = new Date()
-  d.setDate(d.getDate() - 1)
-  return d.toLocaleDateString('en-CA')
-}
+const today = todayIso
+const yesterday = yesterdayIso
 
 /*
  * The window this screen may write to: the first of the current month through to
@@ -40,21 +34,13 @@ const yesterday = () => {
  * and the form says so rather than offering a date it would refuse.
  */
 
-/** The first of the month we are in. */
-const monthStart = () => {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA')
-}
+const monthStart = monthStartIso
 
 /** September 2026 - the month named in the subtitle. */
 const monthName = () =>
   new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
-/** yyyy-mm-dd -> a local Date, never parsed as UTC. */
-const asDate = (iso) => {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
+const asDate = fromIso
 
 /** yyyy-mm-dd -> Saturday, 5 September 2026. */
 const longDate = (iso) =>
@@ -67,12 +53,7 @@ const longDate = (iso) =>
         year: 'numeric',
       })
 
-/** yyyy-mm-dd -> 05-09-2026, the way the other screens read dates. */
-const shortDate = (iso) => {
-  if (!iso) return '-'
-  const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
-}
+const shortDate = prettyDate
 
 /** Today, Yesterday, or the weekday - the chip under the date field. */
 const relativeLabel = (iso) => {
@@ -113,14 +94,13 @@ function hoursLabel(hours) {
  * and a check out later than the check in. Nothing here is a new privilege - whoever
  * may mark attendance may enter a missed day.</p>
  */
-export default function PastAttendance({ onNotice, onViewHistory }) {
+export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNotice, onViewHistory }) {
   const windowStart = monthStart()
   const windowEnd = yesterday()
   // True on the 1st: the month has no past day in it yet.
   const windowEmpty = windowEnd < windowStart
 
   const [date, setDate] = useState(() => (windowEnd < monthStart() ? '' : yesterday()))
-  const [sewaType] = useState('ROSTER_SEWA')
 
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState(null)
@@ -160,13 +140,26 @@ export default function PastAttendance({ onNotice, onViewHistory }) {
    * there rather than offering to enter it twice. Called on pick, after every save,
    * and whenever the date changes underneath a selected person.
    */
-  const loadDay = async (sewadarId, onDate) => {
-    const fresh = await attendanceApi.status(sewadarId, sewaType, onDate)
+  const loadDay = async (sewadarId, onDate, type = sewaType) => {
+    const fresh = await attendanceApi.status(sewadarId, type, onDate)
     setSelected(fresh)
     setInTime(fresh.inTime ? fresh.inTime.slice(0, 5) : '')
     setOutTime(fresh.outTime ? fresh.outTime.slice(0, 5) : '')
     await loadLog(sewadarId)
     return fresh
+  }
+
+  /* A different sewa type is a different row, so the day is read again. */
+  const onSewaTypeChange = async (value) => {
+    setSewaType(value)
+    setLocalError('')
+    if (selected && date && !dateProblem(date)) {
+      try {
+        await loadDay(selected.sewadarId, date, value)
+      } catch (err) {
+        setLocalError(errorMessage(err, 'Could not read that day'))
+      }
+    }
   }
 
   const onDateChange = async (value) => {
@@ -460,6 +453,22 @@ export default function PastAttendance({ onNotice, onViewHistory }) {
                   <span className="bd-hint">
                     {shortDate(windowStart)} to {shortDate(windowEnd)}
                   </span>
+                </div>
+
+                <div className="bd-field">
+                  <label htmlFor="past-sewa-type">Sewa Type</label>
+                  <select
+                    id="past-sewa-type"
+                    value={sewaType}
+                    onChange={(e) => onSewaTypeChange(e.target.value)}
+                  >
+                    {sewaTypes.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="bd-hint">Which sewa this day was</span>
                 </div>
 
                 <div className="bd-field">

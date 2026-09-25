@@ -1,0 +1,44 @@
+# =============================================================================
+#  Pandal Office Management - the application service
+#
+#  Install:  sudo cp /opt/pandal/config/pandal.service /etc/systemd/system/
+#            sudo systemctl daemon-reload
+#            sudo systemctl enable --now pandal
+#  Watch:    sudo journalctl -u pandal -f
+# =============================================================================
+
+[Unit]
+Description=Pandal Office Management
+# MySQL must be accepting connections before the app validates its tables.
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pandal
+Group=pandal
+WorkingDirectory=/opt/pandal
+
+# The database password and the signing key live here, not on the command line,
+# where every user on the box could read them out of `ps`.
+EnvironmentFile=/opt/pandal/pandal.env
+
+ExecStart=/usr/bin/java -Xms256m -Xmx768m -jar /opt/pandal/app/user-management-1.0.0.jar
+
+# Give it time to build the schema on a cold first start before judging it dead.
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=10
+
+# Least privilege: it needs to read its own jar and talk to MySQL, nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pandal
+
+[Install]
+WantedBy=multi-user.target

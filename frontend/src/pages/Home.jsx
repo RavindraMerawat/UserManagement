@@ -118,8 +118,7 @@ function AttendanceChart({ points }) {
 
 export default function Home() {
   const auth = useAuth()
-  const { user, isSewadar, canMarkAttendance, canManageSewadars, canReviewRequests, can } = auth
-  const canManageUsers = can('USERS')
+  const { user, isSewadar, canMarkAttendance, canManageSewadars, canReviewRequests } = auth
 
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -148,25 +147,87 @@ export default function Home() {
         { key: 'r', label: 'My Requests', value: data.pendingRequests, hint: 'Awaiting review', icon: '⇄', tone: 'red' },
       ]
     : [
+        /*
+         * Total, present and absent are each drawn twice - once for men, once for
+         * women - because that is the split the office works in. The figures come
+         * from the server already grouped; the card does no arithmetic of its own.
+         *
+         * Each links to the same population it counted, gender included, so opening
+         * a card can never list a different number of people than the card showed.
+         */
         {
-          key: 's',
-          label: 'Total Sewadar',
-          value: data.totalSewadars,
+          key: 'sm',
+          label: 'Total Sewadar – Male',
+          value: data.totalByGender?.male ?? 0,
           hint: data.scopeLabel,
-          icon: '\u{1F465}',
+          icon: '\u{1F468}',
           tone: 'blue',
-          to: '/sewadar-list?metric=total',
-          trend: trend(data.totalSewadars, data.totalSewadarsLastMonth, 'from last month'),
+          to: '/sewadar-list?metric=total&gender=MALE',
         },
         {
-          key: 'p',
-          label: 'Present Today',
-          value: data.presentToday,
+          key: 'sf',
+          label: 'Total Sewadar – Female',
+          value: data.totalByGender?.female ?? 0,
+          hint: data.scopeLabel,
+          icon: '\u{1F469}',
+          tone: 'violet',
+          to: '/sewadar-list?metric=total&gender=FEMALE',
+        },
+        {
+          key: 'pm',
+          label: 'Present Today – Male',
+          value: data.presentByGender?.male ?? 0,
           hint: longDate(data.today),
           icon: '✓',
           tone: 'green',
-          to: '/sewadar-list?metric=present',
-          trend: trend(data.presentToday, data.presentYesterday, 'from yesterday'),
+          to: '/sewadar-list?metric=present&gender=MALE',
+          trend: trend(
+            data.presentByGender?.male ?? 0,
+            data.presentByGenderYesterday?.male ?? 0,
+            'from yesterday',
+          ),
+        },
+        {
+          key: 'pf',
+          label: 'Present Today – Female',
+          value: data.presentByGender?.female ?? 0,
+          hint: longDate(data.today),
+          icon: '✓',
+          tone: 'green',
+          to: '/sewadar-list?metric=present&gender=FEMALE',
+          trend: trend(
+            data.presentByGender?.female ?? 0,
+            data.presentByGenderYesterday?.female ?? 0,
+            'from yesterday',
+          ),
+        },
+        {
+          key: 'am',
+          label: 'Absent Today – Male',
+          value: data.absentByGender?.male ?? 0,
+          hint: longDate(data.today),
+          icon: '⚠',
+          tone: 'red',
+          to: '/sewadar-list?metric=absent&gender=MALE',
+          trend: trend(
+            data.absentByGender?.male ?? 0,
+            data.absentByGenderYesterday?.male ?? 0,
+            'from yesterday',
+          ),
+        },
+        {
+          key: 'af',
+          label: 'Absent Today – Female',
+          value: data.absentByGender?.female ?? 0,
+          hint: longDate(data.today),
+          icon: '⚠',
+          tone: 'red',
+          to: '/sewadar-list?metric=absent&gender=FEMALE',
+          trend: trend(
+            data.absentByGender?.female ?? 0,
+            data.absentByGenderYesterday?.female ?? 0,
+            'from yesterday',
+          ),
         },
         {
           key: 'q',
@@ -178,30 +239,6 @@ export default function Home() {
           to: '/requests',
           trend: trend(data.pendingRequests, data.pendingRequestsLastWeek, 'from last week'),
         },
-        // The design's fourth tile is Active Users, which only the roles that
-        // administer accounts may be shown. Every other role gets Absent Today in
-        // its place - the same tile shape, a figure they are allowed to see.
-        canManageUsers
-          ? {
-              key: 'u',
-              label: 'Active Users',
-              value: data.activeUsers,
-              hint: 'Enabled accounts',
-              icon: '\u{1F465}',
-              tone: 'violet',
-              to: '/users',
-              trend: trend(data.activeUsers, data.activeUsersLastMonth, 'from last month'),
-            }
-          : {
-              key: 'a',
-              label: 'Absent Today',
-              value: data.absentToday,
-              hint: 'Today',
-              icon: '⚠',
-              tone: 'red',
-              to: '/sewadar-list?metric=absent',
-              trend: trend(data.absentToday, data.absentYesterday, 'from yesterday'),
-            },
       ]
 
   // Only actions this role can actually complete.
@@ -220,18 +257,7 @@ export default function Home() {
   return (
     <div className="home">
       <div className="home-head">
-        <div>
-          <h1 className="home-name">
-            {greeting()}, {data.greetingName.split(' ')[0]}! <span aria-hidden="true">&#128075;</span>
-          </h1>
-          <p className="home-sub">Service before self, always.</p>
-        </div>
-        <div className="home-head-right">
-          <span className="home-date">
-            <span aria-hidden="true">&#128197;</span>
-            {shortDate(data.today)}
-          </span>
-        </div>
+         
       </div>
 
       {user?.mustChangePassword && (
@@ -248,7 +274,10 @@ export default function Home() {
             <>
               <span className={`tile-icon ${s.tone}`}>{s.icon}</span>
               <div className="tile-body">
-                <span className="tile-label">{s.label}</span>
+                {/* title, so hovering a clipped label shows the whole thing. */}
+                <span className="tile-label" title={s.label}>
+                  {s.label}
+                </span>
                 <span className="tile-value">{s.value}</span>
                 {s.trend ? (
                   <span className={`tile-trend ${s.trend.dir}`}>
@@ -260,7 +289,9 @@ export default function Home() {
                     <span>{s.trend.period}</span>
                   </span>
                 ) : (
-                  <span className="tile-hint">{s.hint}</span>
+                  <span className="tile-hint" title={s.hint}>
+                    {s.hint}
+                  </span>
                 )}
               </div>
               {s.to && (

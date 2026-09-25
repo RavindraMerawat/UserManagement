@@ -41,7 +41,9 @@ public class AuthorizationController {
         return authService.login(request);
     }
 
-    @Operation(summary = "Profile of the signed-in user")
+    @Operation(summary = "Profile of the signed-in user",
+            description = "Re-reads the account behind the token, including its photo stamp, "
+                    + "so a page refresh does not lose the name, the menu or the picture.")
     @GetMapping("/me")
     public LoginResponse me() {
         return authService.me();

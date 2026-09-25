@@ -6,6 +6,9 @@ public record MonthlyReportRow(
         String sewadarName,
         String zoneName,
         String department,
+        /** Years old at the end of the reporting period, or null with no birth date. */
+        Integer age,
+        boolean exempted,
         long totalRecords,
         long presentDays,
         long halfDays,

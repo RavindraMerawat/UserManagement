@@ -6,6 +6,7 @@ import com.user.management.model.SewadarRequest;
 import com.user.management.model.SewadarResponse;
 import com.user.management.model.TabCountsResponse;
 import com.user.management.service.SewadarService;
+import com.user.management.entity.Gender;
 import com.user.management.entity.AttendanceStatus;
 import com.user.management.entity.Photo;
 import org.springframework.http.CacheControl;
@@ -89,9 +90,11 @@ public class SewadarController {
             @Parameter(description = "Defaults to today")
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @Parameter(description = "MALE or FEMALE. Omit for every gender.")
+            @RequestParam(required = false) Gender gender,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
-        return sewadarService.dashboardList(status, date,
+        return sewadarService.dashboardList(status, date, gender,
                 PageRequest.of(page, Math.min(size, 200), Sort.by("name")));
     }
 

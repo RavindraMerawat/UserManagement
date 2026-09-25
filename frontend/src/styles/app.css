@@ -223,6 +223,25 @@ textarea {
   min-height: 76px;
 }
 
+/* A labelled yes/no pair, where a lone checkbox would not say what "off" means. */
+.radio-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.radio-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-mid);
+}
+
+.radio-row {
+  display: flex;
+  gap: 18px;
+}
+
 .checkline {
   display: flex;
   align-items: center;
@@ -633,30 +652,37 @@ tfoot td {
  * tall as anything in them.
  */
 table.table-md th {
-  padding: 8px 12px;
+  padding: 7px 14px;
 }
 
 table.table-md td {
-  padding: 9px 12px;
+  padding: 8px 14px;
 }
 
-/* Fixed widths for the columns whose content never varies much, so the name column
-   takes the slack instead of a 700px gap opening in the middle of the row. */
-.col-id {
-  width: 70px;
+/*
+ * Every column is as wide as what is in it. A table is 100% wide by default and
+ * gives the leftover width to whichever column has no size of its own, which is
+ * how a gap the width of a hand opened between a name and its status. The slack
+ * goes to `.col-fill` at the end of the row instead, where it is only margin.
+ */
+table.table-md th,
+table.table-md td {
+  width: 1%;
+  white-space: nowrap;
 }
 
-.col-code {
-  width: 190px;
+/* Written with the table in front of it: `table.table-md td` above is the more
+   specific selector, and a bare `.col-fill` lost the width to it - which left the
+   slack spread across every column again. */
+table.table-md th.col-fill,
+table.table-md td.col-fill {
+  width: 100%;
+  padding: 0;
 }
 
-.col-status {
-  width: 130px;
-}
-
-.col-action {
-  width: 176px;
-}
+/* A long value widens the table and the wrapper scrolls, rather than the cell
+   folding onto two lines - a row that is one line high is the point of this
+   density. */
 
 /* A second line under a cell's main value - the zone beneath a satsang point's area. */
 .cell-sub {
@@ -1060,6 +1086,25 @@ table.table-md td {
   .bd-actions .btn {
     flex: 1 1 140px;
   }
+}
+
+/* The sewa type in force on Mark Attendance, under the search row. */
+.mark-sewa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.mark-sewa label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.mark-sewa select {
+  width: auto;
+  min-width: 180px;
 }
 
 /* A past date is not a clock reading, so it does not get the clock's size. */
@@ -1695,14 +1740,101 @@ tbody tr.row-focus:hover {
 
 /* ---------- stat tiles ---------- */
 
+/* ---------- the report sheet ---------- */
+
+.report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+.report-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.report-period {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.report-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.report-chip {
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.report-chip.strong {
+  background: var(--brand-light);
+  border-color: transparent;
+  color: var(--brand-ink);
+}
+
+/* A column of figures reads down its right edge, and the digits line up. */
+.report-table td.num,
+.report-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Fourteen columns at the usual cell padding came to 1191px inside a 1168px card,
+ * so the last column - the attendance percentage, the figure the whole sheet is
+ * read for - sat just off the right edge behind a scrollbar. Tighter cells fit the
+ * lot with room to spare, which is cheaper than dropping a column to make space.
+ */
+/* `table.report-table`, not `.report-table`: the table-md rule above is
+   `table.table-md th`, and a bare class selector loses to it. */
+table.report-table th,
+table.report-table td {
+  padding-left: 9px;
+  padding-right: 9px;
+}
+
 .tile-grid,
 .stat-grid {
   display: grid;
-  /* 196px, not 216: at 216 the fourth tile dropped to its own row on a 1280px
-     screen, which looked like a mistake rather than a layout. */
-  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  /*
+   * 240px, which puts the dashboard's seven cards on two rows as four and three.
+   * They were tried on a single line and it was the wrong call: at a seventh of
+   * the width a card is all label and no figure. Two roomy rows read faster than
+   * one cramped one.
+   *
+   * A label still gets one line and is clipped if it does not fit, carrying its
+   * full text as a tooltip - a card should not stretch to suit its longest
+   * heading.
+   */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
+}
+
+/*
+ * The dashboard's own grid is pinned to four across on a desktop rather than left
+ * to auto-fit. Seven cards under auto-fit re-flow with the window - 5 + 2 wide,
+ * 3 + 3 + 1 narrower - and the male/female pairs land in different rows each time.
+ * Four columns makes it 4 + 3 at every desktop width, with the pairs together.
+ */
+@media (min-width: 1100px) {
+  .tile-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .tile,
@@ -1716,6 +1848,7 @@ tbody tr.row-focus:hover {
   box-shadow: var(--shadow);
   padding: 18px;
 }
+
 
 button.tile {
   width: 100%;
@@ -1793,10 +1926,17 @@ button.tile {
   gap: 1px;
 }
 
+/*
+ * One line, always. A clipped label carries its full text in a title attribute,
+ * so hovering says what was cut - which is why the markup sets one.
+ */
 .tile-label {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--ink-soft);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tile-value {
@@ -1846,6 +1986,15 @@ button.tile {
 .tile-trend span {
   color: var(--ink-soft);
   font-weight: 500;
+}
+
+/*
+ * Hidden on the dashboard cards. The card is a link, it lifts on hover and its
+ * cursor says so; the chevron was worth about a word of label, and the word it
+ * cost was "Male" or "Female" - the only part that tells two cards apart.
+ */
+.tile .tile-go {
+  display: none;
 }
 
 .tile-go {
@@ -2363,41 +2512,42 @@ button.tile {
 
 /* ---------- checked in / out state pills ---------- */
 
-.state-grid {
-  display: flex;
-  flex-wrap: wrap;
+/*
+ * The two states and the two buttons share one grid, so all four cells are the
+ * same width and sit in a block rather than each sizing itself to its own text.
+ * 460px keeps a button a button: across the full panel they would be a metre wide.
+ */
+.state-grid,
+.act-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 14px;
+  max-width: 460px;
+}
+
+.state-grid {
+  margin-bottom: 10px;
 }
 
 .state {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 4px 15px 4px 5px;
+  height: 40px;
+  padding: 0 14px 0 5px;
   border-radius: var(--radius-pill);
   border: 1px solid transparent;
-  font-size: 12.5px;
-  max-width: 100%;
-}
-
-.state-text {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
   min-width: 0;
 }
 
-.state strong {
-  font-size: 13px;
-}
-
-.state-detail::before {
-  content: '\00b7';
-  margin-right: 6px;
-  opacity: 0.5;
+/* One line, clipped if it must be; the tooltip carries the whole thing. */
+.state-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .state-icon {
@@ -2443,13 +2593,11 @@ button.tile {
 }
 
 .act-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
-  gap: 10px;
 }
 
 .act-grid .btn {
   height: 40px;
+  width: 100%;
 }
 
 tr.row-picked td {
@@ -2513,6 +2661,12 @@ tr.row-picked td {
   gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+
+/* The gender a drill-down list was opened for, beside its heading. */
+.list-title-qualifier {
+  font-weight: 600;
+  color: var(--ink-soft);
 }
 
 .list-title {
@@ -2652,7 +2806,10 @@ tr.row-picked td {
   }
 
   .mark-search-field input,
-  .act-grid .btn {
+  /* A thumb needs a taller target - and the state beside it grows to match, so
+     the block stays square on a phone as well. */
+  .act-grid .btn,
+  .state {
     height: 46px;
   }
 
@@ -2760,12 +2917,7 @@ tr.row-picked td {
     width: 100%;
   }
 
-  .act-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .act-grid .btn {
-    width: 100%;
     padding: 0 8px;
   }
 
@@ -2863,6 +3015,7 @@ tr.row-picked td {
   .stat-grid,
   .action-grid,
   .badge-stats,
+  .state-grid,
   .act-grid {
     grid-template-columns: 1fr;
   }

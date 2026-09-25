@@ -3,6 +3,11 @@ package com.user.management.repository.projection;
 /** Spring Data interface projection for the monthly attendance aggregation. */
 public interface MonthlySummaryRow {
 
+    /** For the age column on the PDF; null when the sewadar has no birth date. */
+    java.time.LocalDate getBirthDate();
+
+    Boolean getExempted();
+
     Long getSewadarId();
 
     String getBadgeNumber();

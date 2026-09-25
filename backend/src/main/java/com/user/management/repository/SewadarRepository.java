@@ -1,6 +1,8 @@
 package com.user.management.repository;
 
 import com.user.management.entity.AttendanceStatus;
+import com.user.management.entity.Gender;
+import com.user.management.repository.projection.GenderCount;
 import com.user.management.entity.Sewadar;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -64,6 +66,31 @@ public interface SewadarRepository extends JpaRepository<Sewadar, Long> {
      * which is the right answer for "how many did we have" but not for "how many rows
      * existed" - the tile means the former.</p>
      */
+    /**
+     * The same population as {@link #countForDashboard}, grouped by gender.
+     *
+     * <p>One query rather than one per gender: the dashboard needs male and female
+     * for three metrics across two periods, and asking separately would be a dozen
+     * round trips for numbers the database can group in one pass. Sewadars with no
+     * gender recorded are grouped under a null key and counted in neither card.</p>
+     */
+    @Query("""
+            select s.gender as gender, count(s) as count from Sewadar s
+            where s.active = true
+              and (:zoneIds is null or s.zone.id in :zoneIds)
+              and (:sewadarId is null or s.id = :sewadarId)
+              and (:status is null or exists (
+                    select a.id from Attendance a
+                    where a.sewadar = s
+                      and a.attendanceDate = :onDate
+                      and a.status = :status))
+            group by s.gender
+            """)
+    List<GenderCount> countForDashboardByGender(@Param("status") AttendanceStatus status,
+                                                @Param("onDate") LocalDate onDate,
+                                                @Param("zoneIds") Collection<Long> zoneIds,
+                                                @Param("sewadarId") Long sewadarId);
+
     @Query("""
             select count(s) from Sewadar s
             where s.active = true
@@ -94,6 +121,7 @@ public interface SewadarRepository extends JpaRepository<Sewadar, Long> {
             where s.active = true
               and (:zoneIds is null or z.id in :zoneIds)
               and (:sewadarId is null or s.id = :sewadarId)
+              and (:gender is null or s.gender = :gender)
               and (:status is null or exists (
                     select a.id from Attendance a
                     where a.sewadar = s
@@ -104,6 +132,7 @@ public interface SewadarRepository extends JpaRepository<Sewadar, Long> {
                                    @Param("onDate") LocalDate onDate,
                                    @Param("zoneIds") Collection<Long> zoneIds,
                                    @Param("sewadarId") Long sewadarId,
+                                   @Param("gender") Gender gender,
                                    Pageable pageable);
 
     @Query("""

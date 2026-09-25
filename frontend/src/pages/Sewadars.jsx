@@ -7,6 +7,7 @@ import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
 import { Avatar, PhotoPicker } from '../components/Photo'
+import { todayIso } from '../dates'
 
 const EMPTY_FORM = {
   badgeNumber: '',
@@ -31,6 +32,7 @@ const EMPTY_FORM = {
   primarySewaType: '',
   joiningDate: '',
   active: true,
+  exempted: false,
   createLogin: false,
   loginUsername: '',
 }
@@ -154,6 +156,7 @@ export default function Sewadars() {
       primarySewaType: row.primarySewaType || '',
       joiningDate: row.joiningDate || '',
       active: row.active,
+      exempted: row.exempted ?? false,
       createLogin: false,
       loginUsername: '',
       hasLogin: row.hasLogin,
@@ -519,10 +522,27 @@ export default function Sewadars() {
                 <input value={editing.name} onChange={set('name')} required />
               </Field>
 
+              {/*
+                Gender sits on the main form, not behind "additional details".
+                The dashboard counts male and female as separate cards, so a record
+                saved without it is counted in neither - and hidden behind a
+                collapsed section is exactly how it came to be left unset.
+              */}
+              <Field label="Gender">
+                <select value={editing.gender} onChange={set('gender')}>
+                  <option value="">Not set</option>
+                  {(options.genders || []).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
               <Field label="Birth Date">
                 <input
                   type="date"
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={todayIso()}
                   value={editing.dateOfBirth}
                   onChange={set('dateOfBirth')}
                 />
@@ -650,16 +670,6 @@ export default function Sewadars() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Gender">
-                  <select value={editing.gender} onChange={set('gender')}>
-                    <option value="">Not set</option>
-                    {(options.genders || []).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
                 <Field label="City">
                   <input value={editing.city} onChange={set('city')} />
                 </Field>
@@ -673,6 +683,36 @@ export default function Sewadars() {
             )}
 
             <div style={{ marginTop: 18, display: 'grid', gap: 10 }}>
+              {/*
+                Exempted is excused from attendance - the person stays on the roster
+                and in the reports, and a low figure against their name is expected
+                rather than a finding. No is the default, so the flag only ever means
+                something when someone has deliberately set it.
+              */}
+              <div className="radio-field">
+                <span className="radio-field-label">Exempted</span>
+                <div className="radio-row">
+                  <label className="checkline">
+                    <input
+                      type="radio"
+                      name="exempted"
+                      checked={!editing.exempted}
+                      onChange={() => setEditing((e) => ({ ...e, exempted: false }))}
+                    />
+                    No
+                  </label>
+                  <label className="checkline">
+                    <input
+                      type="radio"
+                      name="exempted"
+                      checked={Boolean(editing.exempted)}
+                      onChange={() => setEditing((e) => ({ ...e, exempted: true }))}
+                    />
+                    Yes
+                  </label>
+                </div>
+              </div>
+
               <label className="checkline">
                 <input type="checkbox" checked={editing.active} onChange={set('active')} />
                 Active sewadar

@@ -195,6 +195,25 @@ table with Work Hours and Location.
 > (38px), only as wide as their own text. Requested, and recorded in
 > [change set 12](CHANGELOG.md).
 
+**AT-3b — Enter a day that was missed.** Status: **Done**
+
+A separate **Manage Past Attendance** tab, deliberately not a date field on the live
+Mark Attendance screen - that would invite recording today's arrival against last
+Tuesday. Person card, one row of Attendance Date / Check In Time / Check Out Time, a
+Remarks box, and a single **Save Attendance** that writes whichever halves are
+missing.
+
+| Rule | Where it is enforced |
+|---|---|
+| The current month's past days only - the 1st through yesterday | picker `min`/`max`, an immediate message on a typed date, and again inside save |
+| Times already recorded arrive filled in and locked | the day is read before the form is drawn |
+| No future date, no second check in, check out after check in | the server, in `CheckInOutService` |
+
+The month window is a **screen policy**, not an invariant: the server accepts any
+non-future date, so a direct API call is not bound by it. Adding it to
+`CheckInOutService` would not affect Mark Attendance or the zone sheet, since today
+always falls inside the current month.
+
 **AT-4 — Search a sewadar by Badge No, Name, Mobile No or Aadhaar Card.** Status: **Done**
 
 | Key | Match | Verified |
@@ -360,19 +379,34 @@ which records the design in enough detail to rebuild it if the rules change.
 
 **UI-1 — Login screen.** Status: **Done**
 
+Rebuilt in change set 23 from a supplied mock-up and its source: a blue sky hero
+carrying the wordmark, *Together We Serve*, the promise, a cloud-and-orbit
+illustration, the four modules and the quote; a white panel on the right with the
+two fields, remember me, the Login button and **Google** beneath it.
+
 | Sub-requirement | Status |
 |---|---|
-| Blue background | Done — blue gradient |
+| Blue background | Done — layered gradient, drawn artwork, no image download |
 | Remove "Sign in to manage attendance, sewa records and reports." | Done |
 | Remove the `ADMIN_PASSWORD` hint block | Done |
 | Field labelled **Login**, not Username | Done |
+| Google single sign-on only, no Microsoft | Done — Microsoft removed on request |
+
+> Google, *Forgot password* and *Sign up* are drawn because the design carries them.
+> None is wired: single sign-on is not configured, and accounts and password resets
+> belong to an administrator. Each says so when used.
 
 **UI-2 — Left-side navigation behind the login.** Status: **Done**
 
-Home, About, Sewadar, Attendance, Report, Request, Contact — plus Zones (Admin /
-Office Admin) and User Accounts (Admin). Built from the `menu` array in the login
-response, so the **server** decides what appears; route guards repeat the check but
-never enforce it alone.
+Dashboard, Sewadar, Attendance, Badge Detail, Report, Request, User Account, Setup,
+Contact — in that order, as requested in change set 20. User Account and Setup are
+Admin and Office Admin. Built from the `menu` array in the login response, so the
+**server** decides what appears; route guards repeat the check but never enforce it
+alone.
+
+Attendance carries four tabs: **Mark Attendance** (now, one press), **Zone
+Attendance** (a whole zone at once), **Manage Past Attendance** (a missed day, typed
+times) and **Records**.
 
 **UI-3 — Branding.** Status: **Done\*** — sidebar, login, browser tab, footer, About
 page, Swagger title and the report email footer.
@@ -473,8 +507,22 @@ mobileNo, emailId, aadharNo, zoneId, area, point`.
 | Reports | `/api/reports` | `monthly`, `roster-sewa`, `construction-sewa`, `range`, each with `/excel`, `/csv`, `/share` |
 | Requests | `/api/requests/zone-change` | raise, `review`, `cancel` |
 | Zones | `/api/zones` | CRUD |
-| Users | `/api/users` | CRUD, `{id}/photo` (Admin only) |
+| Users | `/api/users` | CRUD, `{id}/photo` (Admin and Office Admin; only an Admin may touch an Admin account) |
 | Reference | `/api/meta` | `options`, `channels`, `contact` |
+
+Two things a caller cannot guess, stated in the OpenAPI description itself:
+
+1. **Every read is scoped to the token.** The same endpoint returns different rows
+   for different callers - a Zone Incharge sees their zones, a Sewadar sees their own
+   record, an Admin sees everything.
+2. **Dates are calendar dates in the server's timezone**, sent as `yyyy-MM-dd`, never
+   derived from a UTC instant. East of Greenwich the UTC date is still yesterday for
+   part of every morning, which silently writes attendance to the wrong day
+   ([change set 27](CHANGELOG.md)).
+
+`LoginResponse` carries `hasPhoto` and `photoUpdatedAt` so a client can draw the
+signed-in account's picture without a second call; `photoUpdatedAt` is the cache key,
+so a new upload replaces the old image.
 
 Full parameter and response detail is in Swagger at `/swagger-ui.html`.
 

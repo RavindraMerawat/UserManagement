@@ -148,7 +148,7 @@ export const reportApi = {
   /**
    * Downloads a report through the browser.
    *
-   * @param format 'excel' or 'csv'
+   * @param format 'excel', 'csv' or 'pdf'
    * @param params year/month, or fromDate/toDate when `range` is true
    * @param range  true to hit the custom range endpoint
    */
@@ -160,7 +160,8 @@ export const reportApi = {
     })
     const disposition = response.headers['content-disposition'] || ''
     const match = disposition.match(/filename="?([^"]+)"?/)
-    const fileName = match ? match[1] : `attendance-report.${format === 'excel' ? 'xlsx' : 'csv'}`
+    const fallbackExtension = { excel: 'xlsx', csv: 'csv', pdf: 'pdf' }[format] || format
+    const fileName = match ? match[1] : `attendance-report.${fallbackExtension}`
 
     const url = window.URL.createObjectURL(new Blob([response.data]))
     const link = document.createElement('a')

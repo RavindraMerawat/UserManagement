@@ -109,9 +109,9 @@ export default function Login() {
         <div className="hero-content">
           <div className="hero-text">
             <h1>
-              Together
+              Radha Soami
               <br />
-              We <span>Serve</span>
+              Satsang Indore
             </h1>
             <p>
               Manage People. Simplify Processes.
@@ -159,7 +159,7 @@ export default function Login() {
 
         <div className="login-container">
           <div className="login-heading">
-            <h1>Welcome Back</h1>
+            <h1>Welcome!</h1>
             <p>Login to your account to continue</p>
           </div>
 
@@ -263,21 +263,7 @@ export default function Login() {
               Google
             </button>
           </div>
-
-          <div className="signup">
-            Don&apos;t have an account?
-            <button
-              type="button"
-              onClick={() =>
-                setNotice(
-                  'Accounts are created by your office administrator. Contact them to have one set up.',
-                )
-              }
-            >
-              Sign up
-            </button>
-          </div>
-        </div>
+           </div>
       </section>
     </div>
   )

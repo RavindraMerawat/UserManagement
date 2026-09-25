@@ -212,7 +212,8 @@ class AadharPrivacyTest {
     private SewadarRequest request(String badge, String name, Long zoneId, String aadhar) {
         return new SewadarRequest(badge, false, name, null, null, null, zoneId, null,
                 aadhar, null, null, null, null, null, null, null, null, null, null,
-                true, false, null);
+                // exempted, active, createLogin, loginUsername
+                false, true, false, null);
     }
 
     /** Puts a principal for the given role into the security context. */

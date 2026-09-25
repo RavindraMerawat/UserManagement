@@ -5,8 +5,7 @@ import Alert from '../../components/Alert'
 import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
 import { EmptyRow, Field } from '../../components/Bits'
-
-const today = () => new Date().toISOString().slice(0, 10)
+import { todayIso } from '../../dates'
 
 function pretty(time) {
   if (!time) return '-'
@@ -21,11 +20,11 @@ function pretty(time) {
  * Zone wise check in and check out. Pick a zone, tick the sewadars present, then
  * check the whole selection in or out in one call.
  */
-export default function ZoneAttendance({ zones, sewaTypes, onNotice, onError }) {
+export default function ZoneAttendance({ zones, sewaTypes, sewaType, setSewaType, onNotice, onError }) {
+  // The date and time are this sheet's own; the sewa type is the shared one.
   const [header, setHeader] = useState({
     zoneId: '',
-    sewaType: 'ROSTER_SEWA',
-    attendanceDate: today(),
+    attendanceDate: todayIso(),
     time: '',
   })
   const [rows, setRows] = useState([])
@@ -55,7 +54,7 @@ export default function ZoneAttendance({ zones, sewaTypes, onNotice, onError }) 
         sewadarApi.forAttendance(header.zoneId),
         attendanceApi.search({
           zoneId: header.zoneId,
-          sewaType: header.sewaType,
+          sewaType: sewaType,
           fromDate: header.attendanceDate,
           toDate: header.attendanceDate,
           size: 200,
@@ -79,7 +78,7 @@ export default function ZoneAttendance({ zones, sewaTypes, onNotice, onError }) 
     } finally {
       setLoading(false)
     }
-  }, [header.zoneId, header.sewaType, header.attendanceDate, onError])
+  }, [header.zoneId, sewaType, header.attendanceDate, onError])
 
   useEffect(() => {
     load()
@@ -125,7 +124,7 @@ export default function ZoneAttendance({ zones, sewaTypes, onNotice, onError }) 
     try {
       const payload = {
         sewadarIds: [...picked],
-        sewaType: header.sewaType,
+        sewaType: sewaType,
         attendanceDate: header.attendanceDate,
         time: header.time || null,
       }
@@ -173,10 +172,7 @@ export default function ZoneAttendance({ zones, sewaTypes, onNotice, onError }) 
             </select>
           </Field>
           <Field label="Sewa type" required>
-            <select
-              value={header.sewaType}
-              onChange={(e) => setHeader({ ...header, sewaType: e.target.value })}
-            >
+            <select value={sewaType} onChange={(e) => setSewaType(e.target.value)}>
               {sewaTypes.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -187,7 +183,7 @@ export default function ZoneAttendance({ zones, sewaTypes, onNotice, onError }) 
           <Field label="Date" required>
             <input
               type="date"
-              max={today()}
+              max={todayIso()}
               value={header.attendanceDate}
               onChange={(e) => setHeader({ ...header, attendanceDate: e.target.value })}
             />

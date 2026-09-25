@@ -82,6 +82,16 @@
             <version>5.2.5</version>
         </dependency>
 
+        <!--
+            PDF reports. PDFBox rather than iText: Apache 2.0, the same licence as
+            the rest of this stack, with no AGPL obligation to worry about.
+        -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

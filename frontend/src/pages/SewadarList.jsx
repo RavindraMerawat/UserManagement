@@ -38,6 +38,8 @@ function age(dateOfBirth) {
   return years - (beforeBirthday ? 1 : 0)
 }
 
+const GENDER_LABEL = { MALE: 'Male', FEMALE: 'Female' }
+
 const PAGE_SIZE = 25
 
 export default function SewadarList() {
@@ -46,6 +48,8 @@ export default function SewadarList() {
 
   const key = params.get('metric') || 'total'
   const metric = METRICS[key] || METRICS.total
+  // The dashboard card that opened this list may have counted one gender only.
+  const gender = params.get('gender') || ''
   const page = Number(params.get('page') || 0)
 
   const [result, setResult] = useState(null)
@@ -56,11 +60,16 @@ export default function SewadarList() {
     setLoading(true)
     setError('')
     sewadarApi
-      .byStatus({ status: metric.status || undefined, page, size: PAGE_SIZE })
+      .byStatus({
+        status: metric.status || undefined,
+        gender: gender || undefined,
+        page,
+        size: PAGE_SIZE,
+      })
       .then(setResult)
       .catch((err) => setError(errorMessage(err, 'Could not load the list')))
       .finally(() => setLoading(false))
-  }, [metric.status, page])
+  }, [metric.status, gender, page])
 
   useEffect(load, [load])
 
@@ -74,7 +83,10 @@ export default function SewadarList() {
     <div>
       <div className="list-head">
         <div>
-          <h2 className="list-title">{metric.title}</h2>
+          <h2 className="list-title">
+            {metric.title}
+            {gender && <span className="list-title-qualifier"> · {GENDER_LABEL[gender] || gender}</span>}
+          </h2>
           <p className="list-sub">
             {metric.blurb}
             {' · '}

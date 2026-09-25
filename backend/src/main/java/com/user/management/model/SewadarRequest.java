@@ -95,6 +95,9 @@ public record SewadarRequest(
 
         LocalDate joiningDate,
 
+        @Schema(description = "Excused from attendance. Defaults to false.")
+        Boolean exempted,
+
         Boolean active,
 
         @Schema(description = "Create a SEWADAR login for this sewadar")

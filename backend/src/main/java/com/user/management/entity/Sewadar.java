@@ -46,6 +46,14 @@ public class Sewadar extends Auditable {
     @Column(name = "badgeReceived", nullable = false)
     private boolean badgeReceived = false;
 
+    /**
+     * Excused from attendance. An exempted sewadar is still on the roster and still
+     * appears in the reports; the flag records that their absence is expected, so a
+     * low attendance figure against their name is not a finding.
+     */
+    @Column(nullable = false)
+    private boolean exempted = false;
+
     /** Name */
     @NotBlank
     @Column(nullable = false, length = 150)

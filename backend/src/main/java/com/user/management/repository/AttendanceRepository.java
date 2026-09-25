@@ -88,6 +88,8 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                    s.name as sewadarName,
                    z.name as zoneName,
                    coalesce(s.department, '') as department,
+                   s.dateOfBirth as birthDate,
+                   s.exempted as exempted,
                    count(a.id) as totalRecords,
                    sum(case when a.status = com.user.management.entity.AttendanceStatus.PRESENT then 1 else 0 end) as presentDays,
                    sum(case when a.status = com.user.management.entity.AttendanceStatus.HALF_DAY then 1 else 0 end) as halfDays,
@@ -105,7 +107,8 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
               and (:sewadarId is null or s.id = :sewadarId)
               and (:zoneId is null or z.id = :zoneId)
               and (:sewaType is null or a.sewaType = :sewaType)
-            group by s.id, s.badgeNumber, s.name, z.name, s.department
+            group by s.id, s.badgeNumber, s.name, z.name, s.department,
+                     s.dateOfBirth, s.exempted
             order by s.name asc
             """)
     List<MonthlySummaryRow> monthlySummary(@Param("from") LocalDate from,
