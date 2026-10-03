@@ -7,6 +7,7 @@ import Alert from '../components/Alert'
 import Spinner from '../components/Spinner'
 import { Avatar } from '../components/Photo'
 import { EmptyRow, Pager } from '../components/Bits'
+import { PAGE_SIZE } from '../pageSize'
 
 /**
  * The people behind a dashboard tile.
@@ -43,7 +44,6 @@ function hoursLabel(hours) {
 const GENDER_LABEL = { MALE: 'Male', FEMALE: 'Female' }
 const LOCALITY_LABEL = { LOCAL: 'Local', OUTSTATION: 'Outstation' }
 
-const PAGE_SIZE = 25
 
 export default function SewadarList() {
   const [params, setParams] = useSearchParams()

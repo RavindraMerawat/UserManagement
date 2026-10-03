@@ -6,6 +6,7 @@ import Alert from '../components/Alert'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
+import { PAGE_SIZE } from '../pageSize'
 
 export default function Requests() {
   const { isSewadar, canReviewRequests, user } = useAuth()
@@ -24,7 +25,7 @@ export default function Requests() {
   const [raising, setRaising] = useState(false)
   const [reviewing, setReviewing] = useState(null)
 
-  const params = useMemo(() => ({ status: status || undefined, page, size: 25 }), [status, page])
+  const params = useMemo(() => ({ status: status || undefined, page, size: PAGE_SIZE }), [status, page])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -258,6 +259,8 @@ function RaiseDialog({ open, onClose, zones, isSewadar, onDone }) {
       sewadarApi.me().then(setMe).catch(() => setMe(null))
     } else {
       // A supervisor or incharge picks from the sewadars they can reach.
+      // This fills a dropdown, not a grid, so it deliberately does not use
+      // PAGE_SIZE: a picker cut off at 25 is a picker you cannot choose from.
       sewadarApi
         .search({ size: 200, sortBy: 'name', direction: 'asc' })
         .then((res) => setSewadars(res.content || []))

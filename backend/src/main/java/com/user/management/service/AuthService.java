@@ -8,6 +8,8 @@ import com.user.management.exception.NotFoundException;
 import com.user.management.model.ChangePasswordRequest;
 import com.user.management.model.LoginRequest;
 import com.user.management.model.LoginResponse;
+import com.user.management.entity.Sewadar;
+import com.user.management.repository.SewadarRepository;
 import com.user.management.repository.UserRepository;
 import com.user.management.security.AppUserDetailsService;
 import com.user.management.security.AppUserPrincipal;
@@ -21,10 +23,12 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -34,6 +38,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final AppUserDetailsService userDetailsService;
     private final UserRepository userRepository;
+    private final SewadarRepository sewadarRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUser;
@@ -72,6 +77,8 @@ public class AuthService {
                 principal.isMustChangePassword(),
                 user.getPhotoUpdatedAt() != null,
                 user.getPhotoUpdatedAt(),
+                photoSewadar(user).map(Sewadar::getId).orElse(null),
+                photoSewadar(user).map(Sewadar::getPhotoUpdatedAt).orElse(null),
                 principal.getDesignation(),
                 capabilities.manageSewadars(),
                 capabilities.manageBadges(),
@@ -85,6 +92,26 @@ public class AuthService {
                 capabilities.reviewZoneRequest(),
                 capabilities.administer(),
                 Capabilities.menu(capabilities));
+    }
+
+    /**
+     * The sewadar whose photo stands in for an account that has none of its own.
+     *
+     * <p>Nobody uploads a picture to a login. The photo of a person is on their
+     * sewadar record, taken for their badge, so that is the one the shell draws -
+     * by id, not by copying the bytes.</p>
+     *
+     * <p>Two ways of finding them, because the link proper ({@code sewadars.user_id})
+     * is set when an account is made from a GR. No and every account made before
+     * that has none. The GR. No on the account identifies the same person, so it is
+     * the second way. An account with neither simply shows its initials.</p>
+     */
+    private Optional<Sewadar> photoSewadar(User user) {
+        Optional<Sewadar> linked = sewadarRepository.findByUserId(user.getId());
+        if (linked.isPresent() || !StringUtils.hasText(user.getBadgeNo())) {
+            return linked;
+        }
+        return sewadarRepository.findByBadgeNumberIgnoreCase(user.getBadgeNo().trim());
     }
 
     /** Re-reads the signed-in account, used by the UI on page refresh. */
@@ -112,6 +139,8 @@ public class AuthService {
                 principal.isMustChangePassword(),
                 user.getPhotoUpdatedAt() != null,
                 user.getPhotoUpdatedAt(),
+                photoSewadar(user).map(Sewadar::getId).orElse(null),
+                photoSewadar(user).map(Sewadar::getPhotoUpdatedAt).orElse(null),
                 principal.getDesignation(),
                 capabilities.manageSewadars(),
                 capabilities.manageBadges(),

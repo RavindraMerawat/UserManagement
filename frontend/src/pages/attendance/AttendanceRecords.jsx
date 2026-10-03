@@ -6,6 +6,7 @@ import Modal from '../../components/Modal'
 import Spinner from '../../components/Spinner'
 import { Badge, EmptyRow, Field, Pager } from '../../components/Bits'
 import { monthStartIso, todayIso } from '../../dates'
+import { PAGE_SIZE } from '../../pageSize'
 
 
 function pretty(time) {
@@ -50,7 +51,7 @@ export default function AttendanceRecords({
       sewaType: filters.sewaType || undefined,
       status: filters.status || undefined,
       page,
-      size: 25,
+      size: PAGE_SIZE,
     }),
     [filters, page],
   )

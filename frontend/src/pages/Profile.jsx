@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { applyTheme, readTheme } from '../theme'
 import Alert from '../components/Alert'
 import { Field } from '../components/Bits'
-import { Avatar, PhotoPicker } from '../components/Photo'
+import { Avatar, PhotoPicker, ownPhoto } from '../components/Photo'
 
 /**
  * Profile and preferences, as three sections behind a sub-navigation: who you are,
@@ -168,6 +168,11 @@ export default function Profile() {
                     kind="users"
                     id={user?.userId}
                     stamp={user?.photoUpdatedAt}
+                    fallback={{
+                      kind: 'sewadars',
+                      id: user?.photoSewadarId,
+                      stamp: user?.sewadarPhotoUpdatedAt,
+                    }}
                     name={user?.fullName}
                     busy={photoBusy}
                     error={photoError}
@@ -177,9 +182,7 @@ export default function Profile() {
                   />
                 ) : (
                   <Avatar
-                    kind="users"
-                    id={user?.userId}
-                    stamp={user?.photoUpdatedAt}
+                    {...ownPhoto(user)}
                     name={user?.fullName}
                     size={76}
                     square

@@ -6,6 +6,7 @@ import Spinner from '../components/Spinner'
 import { Avatar } from '../components/Photo'
 import { Badge, Pager } from '../components/Bits'
 import { useAuth } from '../auth/AuthContext'
+import { PAGE_SIZE } from '../pageSize'
 
 function ageOn(dateOfBirth) {
   if (!dateOfBirth) return '-'
@@ -51,7 +52,7 @@ export default function BadgeDetails() {
     setSelected(null)
     setMatches([])
     try {
-      const result = await sewadarApi.search({ query: term, size: 20 })
+      const result = await sewadarApi.search({ query: term, size: PAGE_SIZE })
       if (result.content.length === 0) setError(`No badge record found for "${term}".`)
       else if (result.content.length === 1) setSelected(result.content[0])
       else setMatches(result.content)
@@ -85,7 +86,7 @@ export default function BadgeDetails() {
     setError('')
     setGridStatus(status)
     try {
-      const result = await sewadarApi.search({ ...BADGE_FILTER[status], page, size: 25 })
+      const result = await sewadarApi.search({ ...BADGE_FILTER[status], page, size: PAGE_SIZE })
       setGridRows(result.content || [])
       setGridPage(result)
     } catch (err) {

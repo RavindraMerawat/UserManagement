@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Avatar } from '../components/Photo'
+import { Avatar, ownPhoto } from '../components/Photo'
 import { useAuth } from '../auth/AuthContext'
 import { authApi } from '../api/endpoints'
 import { BRAND } from '../brand'
@@ -174,17 +174,13 @@ export default function AppLayout() {
                 aria-expanded={menuOpen}
               >
                 {/*
-                  The signed-in account's own photo. Avatar falls back to initials
-                  when there is none, which is what this used to do unconditionally -
-                  it never showed the photo, because it never asked for one.
+                  The signed-in account's photo, or - where the account has none of
+                  its own, which is almost all of them - the photo on their sewadar
+                  record. Nobody uploads a picture to a login; the photo of a person
+                  was taken for their badge and lives on that record, so this reads
+                  it from there. Initials remain the last resort.
                 */}
-                <Avatar
-                  kind="users"
-                  id={user?.userId}
-                  stamp={user?.photoUpdatedAt}
-                  name={user?.fullName || user?.username}
-                  size={36}
-                />
+                <Avatar {...ownPhoto(user)} name={user?.fullName || user?.username} size={36} />
                 {/* Name over role, the way the design shows it. */}
                 <span className="user-name">
                   <strong>{user?.fullName}</strong>

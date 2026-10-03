@@ -5,6 +5,7 @@ import Alert from '../../components/Alert'
 import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
 import { Badge, EmptyRow } from '../../components/Bits'
+import { PAGE_SIZE } from '../../pageSize'
 
 const clock = () =>
   new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })
@@ -70,7 +71,7 @@ export default function MarkAttendance({ sewaType, onNotice, onError }) {
 
   const loadLog = (sewadarId) =>
     attendanceApi
-      .search({ sewadarId, size: 10 })
+      .search({ sewadarId, size: PAGE_SIZE })
       .then((res) => setLog(res.content || []))
       .catch(() => setLog([]))
 

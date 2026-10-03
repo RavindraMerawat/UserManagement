@@ -52,6 +52,27 @@ export function Avatar({ kind, id, stamp, name, size = 40, square = false }) {
 }
 
 /**
+ * Which photo belongs to the signed-in account, as props for {@link Avatar}.
+ *
+ * The office does not upload a picture to a login - the photo of a person was taken
+ * for their badge and lives on their sewadar record. So an account with one of its
+ * own wins, and otherwise the sewadar's is shown, read by id. Neither is copied, and
+ * an account with no photo anywhere falls through to initials.
+ *
+ * The server decides who the sewadar is (by the account link, or by GR. No for the
+ * accounts made before that link existed) and sends it on the profile.
+ */
+export function ownPhoto(user) {
+  if (user?.photoUpdatedAt) {
+    return { kind: 'users', id: user.userId, stamp: user.photoUpdatedAt }
+  }
+  if (user?.photoSewadarId && user?.sewadarPhotoUpdatedAt) {
+    return { kind: 'sewadars', id: user.photoSewadarId, stamp: user.sewadarPhotoUpdatedAt }
+  }
+  return { kind: 'users', id: null, stamp: null }
+}
+
+/**
  * Photo field for the add/edit forms.
  *
  * A new record has no id yet, so the file is held in state and handed back through
@@ -78,6 +99,13 @@ export function PhotoPicker({
   kind,
   id,
   stamp,
+  /*
+   * Where to show a photo from when this record has none of its own - an account
+   * borrowing the face from its sewadar record, say. Display only: `kind`, `id`
+   * and `stamp` above stay the upload target, so choosing a file always writes to
+   * the record being edited rather than to the one lending the picture.
+   */
+  fallback,
   name,
   file,
   onPick,
@@ -128,7 +156,14 @@ export function PhotoPicker({
       {preview ? (
         <img className="photo" src={preview} alt="Selected" style={{ width: 76, height: 76, borderRadius: 12 }} />
       ) : (
-        <Avatar kind={kind} id={id} stamp={stamp} name={name} size={76} square />
+        <Avatar
+          kind={stamp ? kind : fallback?.kind || kind}
+          id={stamp ? id : fallback?.id ?? null}
+          stamp={stamp || fallback?.stamp || null}
+          name={name}
+          size={76}
+          square
+        />
       )}
 
       <div className="photo-picker-actions">

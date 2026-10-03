@@ -6,6 +6,7 @@ import Alert from '../../components/Alert'
 import Spinner from '../../components/Spinner'
 import { EmptyRow, Field, Pager } from '../../components/Bits'
 import { prettyDate, todayIso } from '../../dates'
+import { PAGE_SIZE } from '../../pageSize'
 
 /**
  * The construction sewa register, one sewadar at a time.
@@ -47,7 +48,7 @@ export default function ConstructionSewa() {
     }
     setLoading(true)
     constructionApi
-      .forSewadar(sewadarId, { page, size: 25 })
+      .forSewadar(sewadarId, { page, size: PAGE_SIZE })
       .then(setResult)
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false))
@@ -91,7 +92,7 @@ export default function ConstructionSewa() {
     setHits(null)
     setResult(null)
     try {
-      const search = await sewadarApi.search({ query: term, size: 10 })
+      const search = await sewadarApi.search({ query: term, size: PAGE_SIZE })
       const rows = search.content || []
       if (rows.length === 0) {
         setError(`No sewadar found for "${term}" in the zones you can reach.`)

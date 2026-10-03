@@ -76,7 +76,7 @@ public class WeeklySeatingSewaController {
             @RequestParam BadgeAction action,
             @RequestParam(required = false) Gender gender,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "25") int size) {
 
         return service.dayMovements(date, action, gender,
                 PageRequest.of(page, Math.min(size, 200)));

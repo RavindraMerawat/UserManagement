@@ -3161,6 +3161,78 @@ that sewadar's photo loads. Suite: **184 tests, all passing**.
 
 ---
 
+## 41. One page size, and the face beside your name
+
+Asked for: *"I have also every time give task whole project I want pagination only
+25 record per page so please correct whole page logic in whole project"* and *"I
+login successfully but profile image is not shown - which account I am logging, that
+image is visible on logged in profile."*
+
+### Asking three times was the symptom
+
+Twenty-five rows a page has been asked for three times, and each time the screens
+that were named were fixed and the rest were left behind. That is what happens when
+the number is written separately into every screen and every controller: there is
+nowhere to change it once, so "everywhere" means whatever was looked at that day.
+
+There is now one constant on each side, and the audit was done by machine rather than
+by eye:
+
+- **`frontend/src/pageSize.js`** exports `PAGE_SIZE`. Eleven screens import it -
+  Dashboard drill-down, Sewadars, Attendance records, Mark and Past Attendance,
+  Reports, Badge Detail, User Accounts, Requests, Weekly Seating and Construction
+  Sewa. The stragglers found this time were 10s and 20s on the lookup lists, which
+  nobody had counted as grids.
+- **`PageSizeTest`** walks every `@RestController` by reflection and fails on any
+  `size` parameter defaulting to anything but 25 - including one added next month,
+  which is the point. It found `/api/weekly-seating/day` still on 50.
+
+Three places keep a bigger number on purpose, and now say why in a comment: two fill
+a dropdown, where a list cut off at 25 is a list you cannot choose from, and one is
+looked up by id against the zone roster rather than shown, where a short read would
+draw marked sewadars as unmarked.
+
+The Weekly Seating count detail had no pager and rendered up to 200 rows; it pages at
+25 now, and its S.No counts on from the page rather than restarting at 1.
+
+### The photo was never on the login
+
+The shell asked for the signed-in account's own photo, and almost no account has one:
+the office uploads a picture to a **sewadar** record, taken for the badge, and never
+to a login. So the header drew initials for everybody, including people looking
+straight at their own photo elsewhere in the app.
+
+The profile now says where to read the picture from. An account with its own photo
+keeps it; otherwise it borrows the sewadar's, found by the account link or - for the
+accounts made before that link existed, which is all of the live ones - by the GR. No
+on the account. A pointer, not a copy: change the photo on the sewadar record and the
+header changes with it.
+
+`photoSewadarId` is deliberately **not** `sewadarId`. That field means "this login
+may see only this record" and is set for a Sewadar login alone; borrowing a face must
+not narrow an Office Incharge's screens to the one row it came from. There is a test
+that says so, because the two are one careless edit apart.
+
+The same resolution now runs on My Profile. `PhotoPicker` gained a display-only
+`fallback`, which also fixes a latent bug in the account edit dialog: it had been
+passing the *sewadar's* id as the picker's id to get the fallback picture, so an
+upload wired to that picker would have written to the wrong record.
+
+### Verified
+
+`PageSizeTest`, two cases, one of them checking the walk is looking at something
+rather than passing on an empty list. `ProfilePhotoTest`, five: the linked sewadar's
+photo, the GR. No fallback, the account's own photo winning, nobody to borrow from,
+and the borrowed photo not narrowing the data scope. Take the GR. No half out and two
+of the five fail; set one controller back to 10 and the walk names it.
+
+In a browser against a local build, signed in as an account whose photo exists only
+on its sewadar record: the header and My Profile both render the image, 80x80, rather
+than initials. On live after deploy: every grid reports a page size of 25, and the
+profile carries the new fields. Suite: **191 tests, all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.

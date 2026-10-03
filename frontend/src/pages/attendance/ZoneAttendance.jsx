@@ -57,6 +57,9 @@ export default function ZoneAttendance({ zones, sewaType, onNotice, onError }) {
           sewaType: sewaType,
           fromDate: header.attendanceDate,
           toDate: header.attendanceDate,
+          // Not PAGE_SIZE: this is not a page shown to anybody. It is looked up
+          // by id against the roster below, and a short read would leave the
+          // sewadars past it drawn as unmarked when they are not.
           size: 200,
         }),
       ])

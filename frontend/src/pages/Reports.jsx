@@ -7,6 +7,7 @@ import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 import { EmptyRow, Field } from '../components/Bits'
 import { fromIso } from '../dates'
+import { PAGE_SIZE } from '../pageSize'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -125,7 +126,7 @@ export default function Reports() {
     setHits(null)
     setReport(null)
     try {
-      const found = await sewadarApi.search({ query: term, size: 10 })
+      const found = await sewadarApi.search({ query: term, size: PAGE_SIZE })
       const rows = found.content || []
       if (rows.length === 0) {
         setError(`No sewadar found for "${term}" in the zones you can reach.`)

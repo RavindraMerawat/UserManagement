@@ -8,6 +8,7 @@ import Spinner from '../components/Spinner'
 import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
 import { Avatar, PhotoPicker } from '../components/Photo'
 import { todayIso } from '../dates'
+import { PAGE_SIZE } from '../pageSize'
 
 const EMPTY_FORM = {
   badgeNumber: '',
@@ -95,7 +96,7 @@ export default function Sewadars() {
       zoneId: filters.zoneId || undefined,
       designationId: filters.designationId || undefined,
       page,
-      size: 25,
+      size: PAGE_SIZE,
     }),
     [filters, page],
   )

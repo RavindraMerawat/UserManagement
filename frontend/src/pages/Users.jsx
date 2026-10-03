@@ -7,6 +7,7 @@ import Spinner from '../components/Spinner'
 import { Badge, EmptyRow, Field, Pager, TabStrip } from '../components/Bits'
 import { Avatar, PhotoPicker } from '../components/Photo'
 import { useAuth, ZONE_SCOPED_ROLES } from '../auth/AuthContext'
+import { PAGE_SIZE } from '../pageSize'
 
 // Single source of truth, shared with the route guards.
 const ZONE_SCOPED = ZONE_SCOPED_ROLES
@@ -88,7 +89,7 @@ export default function Users() {
       roleId: filters.roleId || undefined,
       enabled: filters.enabled === '' ? undefined : filters.enabled === 'true',
       page,
-      size: 25,
+      size: PAGE_SIZE,
     }),
     [filters, page],
   )
@@ -118,6 +119,7 @@ export default function Users() {
   }, [result])
 
   // Sewadar accounts have to be linked to a sewadar record, so load the ones without a login.
+  // A dropdown rather than a grid, so not PAGE_SIZE - see the note in Requests.
   useEffect(() => {
     if (creatingType !== 'SEWADAR') return
     sewadarApi
@@ -146,7 +148,7 @@ export default function Users() {
     }
     setGrLookup({ state: 'searching', message: 'Looking up ' + term + '...' })
     try {
-      const found = await sewadarApi.search({ query: term, size: 10 })
+      const found = await sewadarApi.search({ query: term, size: PAGE_SIZE })
       const match = (found.content || []).find(
         (row) => (row.badgeNumber || '').toLowerCase() === term.toLowerCase(),
       )
@@ -756,9 +758,14 @@ export default function Users() {
             */}
             <PhotoPicker
               onReject={setPhotoError}
-              kind={editing.photoUpdatedAt ? 'users' : 'sewadars'}
-              id={editing.photoUpdatedAt ? editing.id : editing.sewadarId}
-              stamp={editing.photoUpdatedAt || editing.sewadarPhotoUpdatedAt}
+              kind="users"
+              id={editing.id}
+              stamp={editing.photoUpdatedAt}
+              fallback={{
+                kind: 'sewadars',
+                id: editing.sewadarId,
+                stamp: editing.sewadarPhotoUpdatedAt,
+              }}
               name={editing.fullName}
               file={photoFile}
               onPick={(chosen) => {

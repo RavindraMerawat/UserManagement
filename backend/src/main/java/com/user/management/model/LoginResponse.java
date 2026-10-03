@@ -51,6 +51,27 @@ public record LoginResponse(
                 + "Clients key their image cache on it, so a new upload replaces the old picture.")
         Instant photoUpdatedAt,
 
+        /*
+         * Where to read the picture when the account has none of its own.
+         *
+         * The office does not upload a photo to a login - the photo is on the
+         * person's sewadar record, taken for their badge. So the shell shows that
+         * one, read by id from /api/sewadars/{photoSewadarId}/photo. This is a
+         * pointer, not a copy: there is one photo of a person, on their record.
+         *
+         * Deliberately separate from `sewadarId` above, which means "this login may
+         * see only this record" and is set for a Sewadar login alone. Mixing the two
+         * would narrow an Office Incharge's screens to one row just to draw a face.
+         */
+        @Schema(description = "The sewadar whose photo to show when this account has none "
+                + "of its own, found by the account link or by its GR. No. Null if neither "
+                + "finds anybody.")
+        Long photoSewadarId,
+
+        @Schema(description = "When that sewadar's photo was last uploaded. The cache key "
+                + "for the fallback picture, the same way photoUpdatedAt is for the account's.")
+        Instant sewadarPhotoUpdatedAt,
+
         @Schema(description = "Screens this role may open, mirrored by the client's route guards.",
                 example = "[\"HOME\",\"SEWADAR\",\"ATTENDANCE\"]")
         /*

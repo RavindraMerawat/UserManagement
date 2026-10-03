@@ -17,6 +17,7 @@ import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
 import { Badge, EmptyRow } from '../../components/Bits'
 import { fromIso, prettyDate, todayIso, yesterdayIso } from '../../dates'
+import { PAGE_SIZE } from '../../pageSize'
 
 /** The server accepts 400; the box is capped shorter so the counter means something. */
 const REMARKS_MAX = 200
@@ -129,7 +130,7 @@ export default function PastAttendance({ sewaTypes, sewaType: initialSewaType, o
 
   const loadLog = (sewadarId) =>
     attendanceApi
-      .search({ sewadarId, size: 10 })
+      .search({ sewadarId, size: PAGE_SIZE })
       .then((res) => setLog(res.content || []))
       .catch(() => setLog([]))
 

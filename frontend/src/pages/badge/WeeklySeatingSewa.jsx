@@ -7,6 +7,7 @@ import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
 import { Badge, EmptyRow, Field, Pager } from '../../components/Bits'
 import { prettyDate, todayIso } from '../../dates'
+import { PAGE_SIZE } from '../../pageSize'
 
 /** Sunday or Thursday, worked out from the date so the two cannot disagree. */
 function dayOf(iso) {
@@ -71,6 +72,7 @@ export default function WeeklySeatingSewa() {
   const [summary, setSummary] = useState(null)
   const [openCount, setOpenCount] = useState(null)
   const [countRows, setCountRows] = useState([])
+  const [countPage, setCountPage] = useState({ page: 0, totalPages: 0, totalElements: 0 })
   const [countLoading, setCountLoading] = useState(false)
 
   const [error, setError] = useState('')
@@ -86,7 +88,7 @@ export default function WeeklySeatingSewa() {
     }
     setLoading(true)
     weeklySeatingApi
-      .forSewadar(sewadarId, { page, size: 25 })
+      .forSewadar(sewadarId, { page, size: PAGE_SIZE })
       .then(setResult)
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false))
@@ -112,21 +114,35 @@ export default function WeeklySeatingSewa() {
     loadSummary()
   }, [loadSummary])
 
-  /** Opens the people behind one card. Clicking the open one closes it again. */
-  const openCountDetail = async (action, gender) => {
+  /**
+   * Opens the people behind one card. Clicking the open one closes it again.
+   *
+   * <p>A day's list runs to hundreds on a busy Sunday, so it is read a page at a
+   * time like every other list here. The card stays open while the page turns:
+   * `toPage` of null is the click that closes it, 0 is a fresh open.</p>
+   */
+  const openCountDetail = async (action, gender, toPage = 0) => {
     const key = `${action}-${gender}`
-    if (openCount === key) {
+    if (toPage === null) {
       setOpenCount(null)
       return
     }
     setOpenCount(key)
     setCountLoading(true)
     try {
-      const found = await weeklySeatingApi.day({ date: sewaDate, action, gender, size: 200 })
+      const found = await weeklySeatingApi.day({
+        date: sewaDate, action, gender, page: toPage, size: PAGE_SIZE,
+      })
       setCountRows(found.content || [])
+      setCountPage({
+        page: found.page ?? toPage,
+        totalPages: found.totalPages ?? 0,
+        totalElements: found.totalElements ?? 0,
+      })
     } catch (err) {
       setError(errorMessage(err, 'Could not read that list'))
       setCountRows([])
+      setCountPage({ page: 0, totalPages: 0, totalElements: 0 })
     } finally {
       setCountLoading(false)
     }
@@ -166,7 +182,7 @@ export default function WeeklySeatingSewa() {
     setHits(null)
     setResult(null)
     try {
-      const search = await sewadarApi.search({ query: term, size: 10 })
+      const search = await sewadarApi.search({ query: term, size: PAGE_SIZE })
       const rows = search.content || []
       if (rows.length === 0) {
         setError(`No sewadar found for "${term}" in the zones you can reach.`)
@@ -294,7 +310,9 @@ export default function WeeklySeatingSewa() {
                 type="button"
                 className={`tile${openCount === `${action}-${gender}` ? ' tile-open' : ''}`}
                 key={label}
-                onClick={() => openCountDetail(action, gender)}
+                onClick={() =>
+                  openCountDetail(action, gender, openCount === `${action}-${gender}` ? null : 0)
+                }
               >
                 <span className={`tile-icon ${tone}`}>▣</span>
                 <div className="tile-body">
@@ -351,7 +369,7 @@ export default function WeeklySeatingSewa() {
                       ) : (
                         countRows.map((row, i) => (
                           <tr key={row.sewadarId}>
-                            <td>{i + 1}</td>
+                            <td>{countPage.page * PAGE_SIZE + i + 1}</td>
                             <td>{row.badgeNumber}</td>
                             <td>{row.name}</td>
                             <td>{row.mobile || '-'}</td>
@@ -367,6 +385,15 @@ export default function WeeklySeatingSewa() {
                       )}
                     </tbody>
                   </table>
+                  <Pager
+                    page={countPage.page}
+                    totalPages={countPage.totalPages}
+                    totalElements={countPage.totalElements}
+                    onChange={(next) => {
+                      const [action, gender] = openCount.split('-')
+                      openCountDetail(action, gender, next)
+                    }}
+                  />
                 </div>
               )}
             </div>
