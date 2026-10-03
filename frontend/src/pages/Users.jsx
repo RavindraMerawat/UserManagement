@@ -17,10 +17,28 @@ const EMPTY = {
   fullName: '',
   email: '',
   mobile: '',
-  role: 'OFFICE_USER',
+  roleId: '',
+  badgeNumber: '',
+  gender: '',
   zoneIds: [],
   sewadarId: '',
   mustChangePassword: true,
+}
+
+/**
+ * Shortens a long value and hands the whole of it to the browser's tooltip.
+ *
+ * <p>A table of accounts has to stay readable at a glance, and one long name or a
+ * work email address pushes every column after it out of line. The full text is
+ * never lost - it is on the cell as a title, which is what a tooltip is - and the
+ * ellipsis is the sign that there is more to see.</p>
+ */
+function clipped(value, limit) {
+  const text = value == null || value === '' ? '' : String(value)
+  if (!text) return { text: '-', title: undefined }
+  return text.length > limit
+    ? { text: text.slice(0, limit).trimEnd() + '…', title: text }
+    : { text, title: undefined }
 }
 
 /** Digits only, never more than ten - the same rule the server enforces. */
@@ -28,7 +46,7 @@ const digitsOnly = (value) => value.replace(/[^0-9]/g, '').slice(0, 10)
 
 export default function Users() {
   const { user, refresh } = useAuth()
-  const [filters, setFilters] = useState({ query: '', role: '', enabled: '' })
+  const [filters, setFilters] = useState({ query: '', roleId: '', enabled: '' })
   const [counts, setCounts] = useState(null)
   const [page, setPage] = useState(0)
   const [result, setResult] = useState(null)
@@ -44,18 +62,33 @@ export default function Users() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  // The GR. No lookup on the create form: what it found, or why it found nothing.
+  const [grLookup, setGrLookup] = useState({ state: 'idle', message: '' })
   const [viewing, setViewing] = useState(null)
   const [photoFile, setPhotoFile] = useState(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState('')
 
+  /*
+   * Which account type a designation implies is the server's decision - it is what
+   * decides whether the form has to ask for zones or for a sewadar to link to. The
+   * options call carries the mapping so the rule is not written down twice.
+   */
+  const accountTypeOf = useCallback(
+    (roleId) =>
+      (options.roleAccountTypes || []).find((o) => String(o.value) === String(roleId))?.label || '',
+    [options],
+  )
+  const creatingType = accountTypeOf(creating?.roleId)
+  const editingType = accountTypeOf(editing?.roleId) || editing?.role || ''
+
   const params = useMemo(
     () => ({
       query: filters.query || undefined,
-      role: filters.role || undefined,
+      roleId: filters.roleId || undefined,
       enabled: filters.enabled === '' ? undefined : filters.enabled === 'true',
       page,
-      size: 20,
+      size: 25,
     }),
     [filters, page],
   )
@@ -86,12 +119,70 @@ export default function Users() {
 
   // Sewadar accounts have to be linked to a sewadar record, so load the ones without a login.
   useEffect(() => {
-    if (creating?.role !== 'SEWADAR') return
+    if (creatingType !== 'SEWADAR') return
     sewadarApi
-      .search({ active: true, size: 200, sortBy: 'name', direction: 'asc' })
+      .search({ size: 200, sortBy: 'name', direction: 'asc' })
       .then((res) => setSewadars((res.content || []).filter((s) => !s.hasLogin)))
       .catch(() => setSewadars([]))
-  }, [creating?.role])
+  }, [creatingType])
+
+
+  /**
+   * Fills the form from the sewadar record a GR. No names.
+   *
+   * <p>An account belongs to somebody already on the register, so the office types
+   * the number they know and the rest arrives with it - name, gender, designation,
+   * zone, email, mobile. Nothing is guessed: a number that matches nobody fills in
+   * nothing and says so, and every field stays editable afterwards.</p>
+   *
+   * <p>It waits for five characters because a GR. No is a letter and five digits,
+   * and searching on "L0" would ask the server for half the register.</p>
+   */
+  const lookUpBadge = useCallback(async (badge) => {
+    const term = (badge || '').trim()
+    if (term.length < 5) {
+      setGrLookup({ state: 'idle', message: '' })
+      return
+    }
+    setGrLookup({ state: 'searching', message: 'Looking up ' + term + '...' })
+    try {
+      const found = await sewadarApi.search({ query: term, size: 10 })
+      const match = (found.content || []).find(
+        (row) => (row.badgeNumber || '').toLowerCase() === term.toLowerCase(),
+      )
+      if (!match) {
+        setGrLookup({ state: 'none', message: `No sewadar with GR. No ${term}.` })
+        return
+      }
+      /*
+       * The picker below lists sewadars without a login, and only for a Sewadar
+       * account. The one just found belongs in it whatever the designation, or the
+       * field would read "Not linked" while the link was in fact being made.
+       */
+      setSewadars((list) =>
+        list.some((row) => row.id === match.id) ? list : [match, ...list],
+      )
+      setCreating((current) => ({
+        ...current,
+        badgeNumber: match.badgeNumber,
+        // The sewadar's name as the register holds it, which is already the whole
+        // name - the register keeps one name field, not three.
+        fullName: match.name || current.fullName,
+        gender: match.gender || current.gender,
+        roleId: match.designationId ? String(match.designationId) : current.roleId,
+        email: match.email || current.email,
+        mobile: match.mobile || current.mobile,
+        sewadarId: String(match.id),
+        zoneIds: match.zoneId ? [String(match.zoneId)] : current.zoneIds,
+      }))
+      setGrLookup({
+        state: 'found',
+        message: `${match.name} - ${match.zoneName || 'no zone'}${match.designationName ? ', ' + match.designationName : ''}`,
+      })
+    } catch (err) {
+      setGrLookup({ state: 'none', message: errorMessage(err, 'Could not look that GR. No up') })
+    }
+  }, [])
 
   const onCreate = async (event) => {
     event.preventDefault()
@@ -100,8 +191,12 @@ export default function Users() {
     try {
       const saved = await userApi.create({
         ...creating,
-        zoneIds: ZONE_SCOPED.includes(creating.role) ? creating.zoneIds.map(Number) : [],
-        sewadarId: creating.role === 'SEWADAR' ? Number(creating.sewadarId) : null,
+        roleId: Number(creating.roleId),
+        badgeNumber: creating.badgeNumber || null,
+        // Empty means "both registers", which is what the server reads a null as.
+        gender: creating.gender || null,
+        zoneIds: ZONE_SCOPED.includes(creatingType) ? creating.zoneIds.map(Number) : [],
+        sewadarId: creating.sewadarId ? Number(creating.sewadarId) : null,
       })
       if (photoFile) {
         try {
@@ -133,11 +228,14 @@ export default function Users() {
     setSaving(true)
     try {
       await userApi.update(editing.id, {
+        username: editing.username,
         fullName: editing.fullName,
         email: editing.email || null,
         mobile: editing.mobile || null,
-        role: editing.role,
-        zoneIds: ZONE_SCOPED.includes(editing.role) ? editing.zoneIds.map(Number) : [],
+        badgeNumber: editing.badgeNumber || null,
+        gender: editing.gender || null,
+        roleId: editing.roleId ? Number(editing.roleId) : undefined,
+        zoneIds: ZONE_SCOPED.includes(editingType) ? editing.zoneIds.map(Number) : [],
         enabled: editing.enabled,
         newPassword: editing.newPassword || null,
       })
@@ -253,15 +351,15 @@ export default function Users() {
               }}
             />
           </Field>
-          <Field label="Role">
+          <Field label="Designation">
             <select
-              value={filters.role}
+              value={filters.roleId}
               onChange={(e) => {
                 setPage(0)
-                setFilters({ ...filters, role: e.target.value })
+                setFilters({ ...filters, roleId: e.target.value })
               }}
             >
-              <option value="">All roles</option>
+              <option value="">All designations</option>
               {(options.roles || []).map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -281,11 +379,15 @@ export default function Users() {
               <table>
                 <thead>
                   <tr>
+                    {/* The order the office reads an account in: who it is, then
+                        what it may do, then whether it is in use. */}
+                    <th>GR. No</th>
                     <th style={{ width: 62 }}>Photo</th>
-                    <th>Username</th>
                     <th>Name</th>
-                    <th>Role</th>
-                    <th>Zones</th>
+                    <th>Username</th>
+                    <th>Gender</th>
+                    <th>Designation</th>
+                    <th>Zone</th>
                     <th>Email</th>
                     <th>Status</th>
                     <th>Last sign in</th>
@@ -296,14 +398,35 @@ export default function Users() {
                   {result?.content?.length ? (
                     result.content.map((row) => (
                       <tr key={row.id}>
+                        <td className="muted">{row.badgeNumber || '-'}</td>
                         <td>
-                          <Avatar
-                            kind="users"
-                            id={row.id}
-                            stamp={row.photoUpdatedAt}
-                            name={row.fullName}
-                            size={36}
-                          />
+                          {/*
+                            The account's own photo if it has one, otherwise the
+                            photo of the sewadar it belongs to - pointed at, not
+                            copied, so there is one picture of a person and changing
+                            it on the register changes it here.
+                          */}
+                          {row.hasPhoto ? (
+                            <Avatar
+                              kind="users"
+                              id={row.id}
+                              stamp={row.photoUpdatedAt}
+                              name={row.fullName}
+                              size={36}
+                            />
+                          ) : (
+                            <Avatar
+                              kind="sewadars"
+                              id={row.sewadarId}
+                              stamp={row.sewadarPhotoUpdatedAt}
+                              name={row.fullName}
+                              size={36}
+                            />
+                          )}
+                        </td>
+                        {/* Hover for the whole of a name longer than ten letters. */}
+                        <td title={clipped(row.fullName, 10).title}>
+                          {clipped(row.fullName, 10).text}
                         </td>
                         <td>
                           <strong>{row.username}</strong>
@@ -313,14 +436,22 @@ export default function Users() {
                             </div>
                           )}
                         </td>
-                        <td>{row.fullName}</td>
+                        {/* Which register this account reads. A dash means both. */}
+                        <td className="muted">
+                          {row.gender === 'MALE' ? 'Male' : row.gender === 'FEMALE' ? 'Female' : '-'}
+                        </td>
                         <td>
-                          <span className="badge role">{row.roleDisplayName}</span>
+                          <span className="badge role">
+                            {row.designationName || row.roleDisplayName}
+                          </span>
                         </td>
                         <td className="muted">
                           {row.zoneNames?.length ? row.zoneNames.join(', ') : 'All zones'}
                         </td>
-                        <td className="muted">{row.email || '-'}</td>
+                        {/* And for an address longer than twenty characters. */}
+                        <td className="muted" title={clipped(row.email, 20).title}>
+                          {clipped(row.email, 20).text}
+                        </td>
                         <td>
                           <Badge
                             value={row.enabled ? 'active' : 'inactive'}
@@ -348,8 +479,12 @@ export default function Users() {
                                 setPhotoError('')
                                 setEditing({
                                   ...row,
+                                  originalUsername: row.username,
                                   email: row.email || '',
                                   mobile: row.mobile || '',
+                                  roleId: row.roleId ? String(row.roleId) : '',
+                                  badgeNumber: row.badgeNumber || '',
+                                  gender: row.gender || '',
                                   zoneIds: (row.zoneIds || []).map(String),
                                   newPassword: '',
                                   photoUpdatedAt: row.photoUpdatedAt,
@@ -370,7 +505,7 @@ export default function Users() {
                       </tr>
                     ))
                   ) : (
-                    <EmptyRow colSpan={9}>No accounts match these filters</EmptyRow>
+                    <EmptyRow colSpan={11}>No accounts match these filters</EmptyRow>
                   )}
                 </tbody>
               </table>
@@ -415,6 +550,28 @@ export default function Users() {
               error={photoError}
             />
             <div className="form-grid">
+              {/*
+                First, because everything else on this form comes from it: type the
+                GR. No and the sewadar's details arrive with it.
+              */}
+              <Field label="GR. No" required>
+                <input
+                  value={creating.badgeNumber}
+                  onChange={(e) => {
+                    const badge = e.target.value
+                    setCreating({ ...creating, badgeNumber: badge })
+                    lookUpBadge(badge)
+                  }}
+                  onBlur={(e) => lookUpBadge(e.target.value)}
+                  placeholder="L04822"
+                  required
+                />
+                {grLookup.state !== 'idle' && (
+                  <p className={grLookup.state === 'none' ? 'photo-error' : 'photo-hint'}>
+                    {grLookup.message}
+                  </p>
+                )}
+              </Field>
               <Field label="Username" required>
                 <input
                   value={creating.username}
@@ -438,16 +595,35 @@ export default function Users() {
                   required
                 />
               </Field>
-              <Field label="Role" required>
+              <Field label="Designation" required>
                 <select
-                  value={creating.role}
-                  onChange={(e) => setCreating({ ...creating, role: e.target.value, zoneIds: [] })}
+                  value={creating.roleId}
+                  onChange={(e) =>
+                    setCreating({ ...creating, roleId: e.target.value, zoneIds: [] })
+                  }
+                  required
                 >
+                  <option value="">Select a designation</option>
                   {(options.roles || []).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
+                </select>
+              </Field>
+              {/*
+                Whose register this account reads. Left empty the account sees both,
+                which is how every account behaved before this field existed; the
+                server applies it to everything the account asks for, not the screen.
+              */}
+              <Field label="Gender">
+                <select
+                  value={creating.gender}
+                  onChange={(e) => setCreating({ ...creating, gender: e.target.value })}
+                >
+                  <option value="">Both (not set)</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
                 </select>
               </Field>
               <Field label="Email">
@@ -473,7 +649,7 @@ export default function Users() {
               </Field>
             </div>
 
-            {ZONE_SCOPED.includes(creating.role) && (
+            {ZONE_SCOPED.includes(creatingType) && (
               <div style={{ marginTop: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>
                   Zones this account can reach <span className="req">*</span>
@@ -493,24 +669,40 @@ export default function Users() {
               </div>
             )}
 
-            {creating.role === 'SEWADAR' && (
-              <div style={{ marginTop: 16 }}>
-                <Field label="Link to sewadar record" required>
-                  <select
-                    value={creating.sewadarId}
-                    onChange={(e) => setCreating({ ...creating, sewadarId: e.target.value })}
-                    required
-                  >
-                    <option value="">Select a sewadar without a login</option>
-                    {sewadars.map((sewadar) => (
-                      <option key={sewadar.id} value={sewadar.id}>
-                        {sewadar.name} ({sewadar.badgeNumber}) - {sewadar.zoneName}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            )}
+{/*
+              Offered for every account type, not only Sewadar. A co-ordinator's
+              zones are recorded on their sewadar record - their own and the others
+              they cover - and that reach only reaches this login once the two are
+              linked.
+            */}
+            <div style={{ marginTop: 16 }}>
+              <Field
+                label="Link to sewadar record"
+                required={creatingType === 'SEWADAR'}
+              >
+                <select
+                  value={creating.sewadarId}
+                  onChange={(e) => setCreating({ ...creating, sewadarId: e.target.value })}
+                  required={creatingType === 'SEWADAR'}
+                >
+                  <option value="">
+                    {creatingType === 'SEWADAR'
+                      ? 'Select a sewadar without a login'
+                      : 'Not linked'}
+                  </option>
+                  {sewadars.map((sewadar) => (
+                    <option key={sewadar.id} value={sewadar.id}>
+                      {sewadar.name} ({sewadar.badgeNumber}) - {sewadar.zoneName}
+                    </option>
+                  ))}
+                </select>
+                {creatingType !== 'SEWADAR' && (
+                  <p className="hint">
+                    Linking the record brings the zones it covers to this login.
+                  </p>
+                )}
+              </Field>
+            </div>
 
             <label className="checkline" style={{ marginTop: 16 }}>
               <input
@@ -523,7 +715,7 @@ export default function Users() {
               Force a password change on first sign in
             </label>
 
-            {['ADMIN', 'OFFICE_ADMIN', 'OFFICE_USER'].includes(creating.role) && (
+            {['ADMIN', 'OFFICE_ADMIN', 'OFFICE_USER'].includes(creatingType) && (
               <Alert kind="info">
                 This role reaches every zone, so no zone selection is needed.
               </Alert>
@@ -557,11 +749,16 @@ export default function Users() {
               a separate failure on screen before anything had been saved - and made
               "update the photo and the other details" two actions instead of one.
             */}
+            {/*
+              An account with no picture of its own shows the sewadar's, here as
+              well as on the grid: same person, one photo, pointed at rather than
+              copied. Choosing a file still sets this account's own.
+            */}
             <PhotoPicker
               onReject={setPhotoError}
-              kind="users"
-              id={editing.id}
-              stamp={editing.photoUpdatedAt}
+              kind={editing.photoUpdatedAt ? 'users' : 'sewadars'}
+              id={editing.photoUpdatedAt ? editing.id : editing.sewadarId}
+              stamp={editing.photoUpdatedAt || editing.sewadarPhotoUpdatedAt}
               name={editing.fullName}
               file={photoFile}
               onPick={(chosen) => {
@@ -584,6 +781,20 @@ export default function Users() {
               }}
             />
             <div className="form-grid">
+              <Field label="Username" required>
+                <input
+                  value={editing.username}
+                  onChange={(e) => setEditing({ ...editing, username: e.target.value })}
+                  minLength={3}
+                  required
+                />
+                {/* Said here because it is not obvious: the token carries the name. */}
+                {editing.username !== editing.originalUsername && (
+                  <p className="photo-hint">
+                    Renaming signs this account out of any session it has open.
+                  </p>
+                )}
+              </Field>
               <Field label="Full name" required>
                 <input
                   value={editing.fullName}
@@ -593,15 +804,37 @@ export default function Users() {
               </Field>
               <Field label="Role">
                 <select
-                  value={editing.role}
-                  onChange={(e) => setEditing({ ...editing, role: e.target.value, zoneIds: [] })}
-                  disabled={editing.role === 'SEWADAR'}
+                  value={editing.roleId || ''}
+                  onChange={(e) => setEditing({ ...editing, roleId: e.target.value, zoneIds: [] })}
                 >
+                  <option value="">Select a designation</option>
                   {(options.roles || []).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
                   ))}
+                </select>
+              </Field>
+              <Field label="GR. No">
+                <input
+                  value={editing.badgeNumber}
+                  onChange={(e) => setEditing({ ...editing, badgeNumber: e.target.value })}
+                  placeholder="L04822"
+                />
+              </Field>
+              {/*
+                Whose register this account reads. Left empty the account sees both,
+                which is how every account behaved before this field existed; the
+                server applies it to everything the account asks for, not the screen.
+              */}
+              <Field label="Gender">
+                <select
+                  value={editing.gender}
+                  onChange={(e) => setEditing({ ...editing, gender: e.target.value })}
+                >
+                  <option value="">Both (not set)</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
                 </select>
               </Field>
               <Field label="Email">
@@ -640,7 +873,7 @@ export default function Users() {
               </Field>
             </div>
 
-            {ZONE_SCOPED.includes(editing.role) && (
+            {ZONE_SCOPED.includes(editingType) && (
               <div style={{ marginTop: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600 }}>
                   Zones this account can reach <span className="req">*</span>
@@ -669,7 +902,7 @@ export default function Users() {
               Account enabled
             </label>
 
-            {editing.role === 'SEWADAR' && (
+            {editingType === 'SEWADAR' && (
               <Alert kind="info">
                 A sewadar account stays linked to its sewadar record, so its role cannot be changed
                 here.
@@ -726,7 +959,9 @@ export default function Users() {
               <div>
                 <h3 className="view-name">{viewing.fullName}</h3>
                 <p className="view-meta">{viewing.username}</p>
-                <span className="badge role">{viewing.roleDisplayName}</span>{' '}
+                <span className="badge role">
+                  {viewing.designationName || viewing.roleDisplayName}
+                </span>{' '}
                 <Badge
                   value={viewing.enabled ? 'active' : 'inactive'}
                   label={viewing.enabled ? 'Enabled' : 'Disabled'}
@@ -740,7 +975,9 @@ export default function Users() {
               <dd>{viewing.username}</dd>
               <dt>Full name</dt>
               <dd>{viewing.fullName}</dd>
-              <dt>Role</dt>
+              <dt>Designation</dt>
+              <dd>{viewing.designationName || '-'}</dd>
+              <dt>Access level</dt>
               <dd>{viewing.roleDisplayName}</dd>
               <dt>Email</dt>
               <dd>{viewing.email || '-'}</dd>

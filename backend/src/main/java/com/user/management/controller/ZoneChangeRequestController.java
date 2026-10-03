@@ -42,7 +42,7 @@ public class ZoneChangeRequestController {
     public PageResponse<ZoneChangeRequestResponse> list(
             @RequestParam(required = false) RequestStatus status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "25") int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 200),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
         return requestService.search(status, pageable);

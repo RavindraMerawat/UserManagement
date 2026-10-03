@@ -57,7 +57,7 @@ class PhotoStorageTest {
                 .role(Role.ADMIN)
                 .enabled(true)
                 .build());
-        AppUserPrincipal principal = new AppUserPrincipal(user, null);
+        AppUserPrincipal principal = new AppUserPrincipal(user, null, null);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
     }

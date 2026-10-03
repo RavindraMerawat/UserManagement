@@ -16,7 +16,7 @@ import Alert from '../../components/Alert'
 import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
 import { Badge, EmptyRow } from '../../components/Bits'
-import { fromIso, monthStartIso, prettyDate, todayIso, yesterdayIso } from '../../dates'
+import { fromIso, prettyDate, todayIso, yesterdayIso } from '../../dates'
 
 /** The server accepts 400; the box is capped shorter so the counter means something. */
 const REMARKS_MAX = 200
@@ -25,20 +25,18 @@ const today = todayIso
 const yesterday = yesterdayIso
 
 /*
- * The window this screen may write to: the first of the current month through to
- * yesterday. Attendance is closed off and reported monthly, so a month that has
- * been reported should not gain new rows afterwards, and today belongs to Mark
- * Attendance, where the clock is the record.
+ * Any day up to and including today.
  *
- * On the first of a month the window is empty - there is no past day in it yet -
- * and the form says so rather than offering a date it would refuse.
+ * It used to be the current month's past days only: today belonged to Mark
+ * Attendance, where the clock is the record, and an earlier month was closed
+ * because it had been reported. The office asked for both limits to go - a day
+ * missed in September is still missed in October, and somebody who comes to the
+ * desk after the fact should be marked here with the times they give rather than
+ * stamped with the time of the conversation.
+ *
+ * The one rule left is the one that cannot be argued with and is enforced on the
+ * server too: attendance is not recorded for a day that has not happened.
  */
-
-const monthStart = monthStartIso
-
-/** September 2026 - the month named in the subtitle. */
-const monthName = () =>
-  new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
 const asDate = fromIso
 
@@ -94,13 +92,18 @@ function hoursLabel(hours) {
  * and a check out later than the check in. Nothing here is a new privilege - whoever
  * may mark attendance may enter a missed day.</p>
  */
-export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNotice, onViewHistory }) {
-  const windowStart = monthStart()
-  const windowEnd = yesterday()
-  // True on the 1st: the month has no past day in it yet.
-  const windowEmpty = windowEnd < windowStart
+export default function PastAttendance({ sewaTypes, sewaType: initialSewaType, onNotice, onViewHistory }) {
+  /*
+   * This screen's own, not the one the live screens use. A missed day may well
+   * have been a different kind of sewa, and choosing it here must not change what
+   * Mark Attendance marks on the next person who walks up.
+   */
+  const [sewaType, setSewaType] = useState(initialSewaType)
 
-  const [date, setDate] = useState(() => (windowEnd < monthStart() ? '' : yesterday()))
+  const windowEnd = today()
+
+  // Yesterday is still the likely answer on a screen for days that were missed.
+  const [date, setDate] = useState(() => yesterday())
 
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState(null)
@@ -119,12 +122,7 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
   const dateProblem = (iso) => {
     if (!iso) return 'Choose the attendance date.'
     if (iso > windowEnd) {
-      return iso === today()
-        ? 'This screen is for past days. Mark today under Mark Attendance.'
-        : 'Attendance cannot be entered for a future date.'
-    }
-    if (iso < windowStart) {
-      return `Only ${monthName()} can be entered here - ${shortDate(windowStart)} onwards.`
+      return 'That day has not happened yet. Choose today or an earlier day.'
     }
     return null
   }
@@ -181,7 +179,7 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
     setLocalError('')
     const term = query.trim()
     if (term.length < 2) {
-      setLocalError('Enter at least 2 characters of a badge number, name, mobile or Aadhaar.')
+      setLocalError('Enter at least 2 characters of a GR. No, name, mobile or Aadhaar.')
       return
     }
     setSearching(true)
@@ -214,11 +212,11 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
     setLocalError('')
   }
 
-  /** Reset puts the form back to the opening day as stored, not to empty. */
+  /** Reset puts the form back to the day it opened on, not to empty. */
   const resetForm = () => {
     setLocalError('')
     setRemarks('')
-    const back = windowEmpty ? '' : windowEnd
+    const back = yesterday()
     setDate(back)
     if (selected && back) {
       loadDay(selected.sewadarId, back).catch(() => {})
@@ -307,18 +305,12 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
           <div>
             <h1 className="bd-title">Manage Past Attendance</h1>
             <p className="bd-sub">
-              Mark or update attendance for a past date in {monthName()}.
+              Mark or update attendance for any day, with the times the sewadar gives
+              you. Today can be entered here too.
             </p>
           </div>
         </div>
       </div>
-
-      {windowEmpty && (
-        <Alert kind="warn">
-          {monthName()} has no past day yet - today is the first of the month. Today&apos;s
-          attendance is marked under <strong>Mark Attendance</strong>.
-        </Alert>
-      )}
 
       {/* The design arrives with a sewadar already chosen; this tab has to find one. */}
       <section className="bd-card bd-find">
@@ -328,7 +320,7 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search the sewadar by Badge No, Name, Mobile No or Aadhaar Card..."
+              placeholder="Search the sewadar by GR. No, Name, Mobile No or Aadhaar Card..."
               aria-label="Search sewadar"
             />
             {query && (
@@ -416,7 +408,7 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
             </div>
 
             <div className="bd-facts">
-              <Fact icon={<IdCard size={19} />} label="Badge No" value={selected.badgeNumber} />
+              <Fact icon={<IdCard size={19} />} label="GR. No" value={selected.badgeNumber} />
               <Fact icon={<MapPin size={19} />} label="Zone" value={selected.zoneName || '-'} />
               <Fact
                 icon={<Map size={19} />}
@@ -441,18 +433,14 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
                     id="past-date"
                     type="date"
                     value={date}
-                    min={windowStart}
                     max={windowEnd}
-                    disabled={windowEmpty}
                     onChange={(e) => onDateChange(e.target.value)}
                   />
                   <span className="bd-chip">
                     <CalendarDays size={14} aria-hidden="true" />
                     {date ? relativeLabel(date) : 'No date'}
                   </span>
-                  <span className="bd-hint">
-                    {shortDate(windowStart)} to {shortDate(windowEnd)}
-                  </span>
+                  <span className="bd-hint">Any day up to {shortDate(windowEnd)}</span>
                 </div>
 
                 <div className="bd-field">
@@ -490,18 +478,25 @@ export default function PastAttendance({ sewaTypes, sewaType, setSewaType, onNot
                 <div className="bd-field">
                   <label htmlFor="past-out">Check Out Time</label>
                   <div className="bd-time">
+                    {/*
+                      A check out without a check in is not a half-marked day, it is
+                      a day with no arrival - so the field waits until there is one,
+                      either already recorded or typed in above.
+                    */}
                     <input
                       id="past-out"
                       type="time"
                       value={outTime}
-                      disabled={selected.checkedOut}
+                      disabled={selected.checkedOut || !(selected.checkedIn || inTime)}
                       onChange={(e) => setOutTime(e.target.value)}
                     />
                   </div>
                   <span className="bd-hint">
                     {selected.checkedOut
                       ? 'Already recorded'
-                      : 'Leave blank if check out is not available yet'}
+                      : selected.checkedIn || inTime
+                        ? 'Leave blank if check out is not available yet'
+                        : 'Enter the check in time first'}
                   </span>
                 </div>
 

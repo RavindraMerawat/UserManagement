@@ -217,7 +217,7 @@ export default function Profile() {
                 <dd>{user?.zoneNames?.length ? user.zoneNames.join(', ') : 'All zones'}</dd>
                 {sewadar && (
                   <>
-                    <dt>Badge No</dt>
+                    <dt>GR. No</dt>
                     <dd>{sewadar.badgeNumber}</dd>
                     <dt>Zone</dt>
                     <dd>{sewadar.zoneName}</dd>

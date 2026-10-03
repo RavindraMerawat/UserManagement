@@ -73,13 +73,13 @@ class RoleScopeTest {
         south = zoneRepository.save(Zone.builder().code("S").name("South").active(true).build());
 
         northSewadar = sewadarRepository.save(Sewadar.builder()
-                .badgeNumber("N-001").name("North Sewadar").zone(north).active(true).build());
+                .badgeNumber("N-001").name("North Sewadar").zone(north).build());
         southSewadar = sewadarRepository.save(Sewadar.builder()
-                .badgeNumber("S-001").name("South Sewadar").zone(south).active(true).build());
+                .badgeNumber("S-001").name("South Sewadar").zone(south).build());
 
         attendanceRepository.save(Attendance.builder()
                 .sewadar(northSewadar).zone(north).attendanceDate(DAY)
-                .sewaType(SewaType.ROSTER_SEWA).status(AttendanceStatus.PRESENT).build());
+                .sewaType(SewaType.DAILY_SEWA).status(AttendanceStatus.PRESENT).build());
         attendanceRepository.save(Attendance.builder()
                 .sewadar(southSewadar).zone(south).attendanceDate(DAY)
                 .sewaType(SewaType.CONSTRUCTION_SEWA).status(AttendanceStatus.PRESENT).build());
@@ -90,7 +90,7 @@ class RoleScopeTest {
     void adminSeesEverything() {
         signInAs(Role.ADMIN, Set.of(), null);
 
-        PageResponse<SewadarResponse> sewadars = sewadarService.search(null, null, true, page());
+        PageResponse<SewadarResponse> sewadars = sewadarService.search(null, null, null, null, null, page());
         assertThat(sewadars.content()).extracting(SewadarResponse::badgeNumber)
                 .containsExactlyInAnyOrder("N-001", "S-001");
 
@@ -103,7 +103,7 @@ class RoleScopeTest {
     void officeUserIsReadOnlyAcrossZones() {
         signInAs(Role.OFFICE_USER, Set.of(), null);
 
-        assertThat(sewadarService.search(null, null, true, page()).content()).hasSize(2);
+        assertThat(sewadarService.search(null, null, null, null, null, page()).content()).hasSize(2);
 
         assertThatThrownBy(() -> sewadarService.delete(northSewadar.getId()))
                 .hasMessageContaining("cannot add, edit or delete");
@@ -114,7 +114,7 @@ class RoleScopeTest {
     void zoneInchargeIsLimitedToItsZones() {
         signInAs(Role.ZONE_INCHARGE, Set.of(north.getId()), null);
 
-        assertThat(sewadarService.search(null, null, true, page()).content())
+        assertThat(sewadarService.search(null, null, null, null, null, page()).content())
                 .extracting(SewadarResponse::badgeNumber)
                 .containsExactly("N-001");
 
@@ -122,7 +122,7 @@ class RoleScopeTest {
                 .hasSize(1);
 
         // Reaching into another zone is refused rather than silently returning nothing.
-        assertThatThrownBy(() -> sewadarService.search(null, south.getId(), true, page()))
+        assertThatThrownBy(() -> sewadarService.search(null, south.getId(), null, null, null, page()))
                 .hasMessageContaining("do not have access to zone");
     }
 
@@ -131,19 +131,19 @@ class RoleScopeTest {
     void coordinatorIsLimitedToItsZones() {
         signInAs(Role.COORDINATOR, Set.of(south.getId()), null);
 
-        assertThat(sewadarService.search(null, null, true, page()).content())
+        assertThat(sewadarService.search(null, null, null, null, null, page()).content())
                 .extracting(SewadarResponse::badgeNumber)
                 .containsExactly("S-001");
 
         // Marking is allowed inside the zone the co-ordinator covers.
         AttendanceResponse marked = attendanceService.mark(new AttendanceRequest(
-                southSewadar.getId(), DAY.plusDays(1), SewaType.OFFICE_SEWA,
+                southSewadar.getId(), DAY.plusDays(1), SewaType.ROSTER_SEWA,
                 AttendanceStatus.PRESENT, null, null, null, "marked by co-ordinator"));
         assertThat(marked.statusLabel()).isEqualTo("Present");
 
         // ...and refused outside it.
         assertThatThrownBy(() -> attendanceService.mark(new AttendanceRequest(
-                northSewadar.getId(), DAY.plusDays(1), SewaType.OFFICE_SEWA,
+                northSewadar.getId(), DAY.plusDays(1), SewaType.ROSTER_SEWA,
                 AttendanceStatus.PRESENT, null, null, null, null)))
                 .hasMessageContaining("do not have access to zone");
 
@@ -168,7 +168,7 @@ class RoleScopeTest {
     void sewadarSeesOnlyItself() {
         signInAs(Role.SEWADAR, Set.of(), northSewadar.getId());
 
-        List<SewadarResponse> visible = sewadarService.search(null, null, true, page()).content();
+        List<SewadarResponse> visible = sewadarService.search(null, null, null, null, null, page()).content();
         assertThat(visible).extracting(SewadarResponse::badgeNumber).containsExactly("N-001");
 
         assertThat(attendanceService.search(null, null, null, null, null, null, attendancePage()).content())
@@ -189,15 +189,15 @@ class RoleScopeTest {
 
         signInAs(Role.ADMIN, Set.of(), null);
         MonthlyReportResponse all = reportService.monthly(
-                month.getYear(), month.getMonthValue(), null, null, null);
+                month.getYear(), month.getMonthValue(), null, null, null, null, null);
         assertThat(all.rows()).hasSize(2);
         assertThat(all.totals().presentDays()).isEqualTo(2);
-        assertThat(all.totals().rosterSewaDays()).isEqualTo(1);
+        assertThat(all.totals().dailySewaDays()).isEqualTo(1);
         assertThat(all.totals().constructionSewaDays()).isEqualTo(1);
 
         signInAs(Role.SEWADAR, Set.of(), northSewadar.getId());
         MonthlyReportResponse mine = reportService.monthly(
-                month.getYear(), month.getMonthValue(), null, null, null);
+                month.getYear(), month.getMonthValue(), null, null, null, null, null);
         assertThat(mine.rows()).hasSize(1);
         assertThat(mine.rows().getFirst().badgeNumber()).isEqualTo("N-001");
         assertThat(mine.totals().presentDays()).isEqualTo(1);
@@ -228,7 +228,7 @@ class RoleScopeTest {
                 .enabled(true)
                 .build());
 
-        AppUserPrincipal principal = new AppUserPrincipal(user, sewadarId);
+        AppUserPrincipal principal = new AppUserPrincipal(user, sewadarId, null);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
     }

@@ -118,7 +118,8 @@ function AttendanceChart({ points }) {
 
 export default function Home() {
   const auth = useAuth()
-  const { user, isSewadar, canMarkAttendance, canManageSewadars, canReviewRequests } = auth
+  const { user, isSewadar, canMarkAttendance, canManageSewadars, canReviewRequests, accountGender } =
+    auth
 
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -136,6 +137,16 @@ export default function Home() {
   if (error) return <Alert kind="error">{error}</Alert>
   if (!data) return null
 
+  /*
+   * An account that reads one register is not shown cards counting the other.
+   *
+   * The server already refuses the data - a female account asking for the men gets
+   * nothing - but a card reading "Total Local Sewadar - Male: 0" still puts the
+   * men on her screen, and reads like a register that has lost its people rather
+   * than one she was never meant to see. Admin has no gender and keeps all four.
+   */
+  const showsGender = (gender) => !accountGender || accountGender === gender
+
   // `to` turns a tile into a link to the people it counted; the server runs the
   // same query for the list that it ran for the number. `trend` is computed from
   // two real measurements and is simply absent when there is nothing to compare.
@@ -148,33 +159,65 @@ export default function Home() {
       ]
     : [
         /*
-         * Total, present and absent are each drawn twice - once for men, once for
-         * women - because that is the split the office works in. The figures come
-         * from the server already grouped; the card does no arithmetic of its own.
+         * Total and present are each drawn twice - once for men, once for women -
+         * because that is the split the office works in. The figures come from the
+         * server already grouped; the card does no arithmetic of its own.
          *
          * Each links to the same population it counted, gender included, so opening
          * a card can never list a different number of people than the card showed.
+         * Absent is not a card: it is total minus present, and the attendance
+         * screens show who it is.
+         */
+        /*
+         * The register is counted four ways, not two: the office plans around local
+         * and outstation separately - who can be called in at short notice and who
+         * has to travel - so "total men" was a number nobody acted on. Each card
+         * opens the people it counted, locality and gender both, so the list that
+         * opens is always the card that was tapped.
          */
         {
-          key: 'sm',
-          label: 'Total Sewadar – Male',
-          value: data.totalByGender?.male ?? 0,
+          key: 'lm',
+          gender: 'MALE',
+          label: 'Total Local Sewadar – Male',
+          value: data.byLocality?.local?.male ?? 0,
           hint: data.scopeLabel,
           icon: '\u{1F468}',
           tone: 'blue',
-          to: '/sewadar-list?metric=total&gender=MALE',
+          to: '/sewadar-list?metric=total&gender=MALE&locality=LOCAL',
         },
         {
-          key: 'sf',
-          label: 'Total Sewadar – Female',
-          value: data.totalByGender?.female ?? 0,
+          key: 'om',
+          gender: 'MALE',
+          label: 'Total Outstation Sewadar – Male',
+          value: data.byLocality?.outstation?.male ?? 0,
+          hint: data.scopeLabel,
+          icon: '\u{1F468}',
+          tone: 'blue',
+          to: '/sewadar-list?metric=total&gender=MALE&locality=OUTSTATION',
+        },
+        {
+          key: 'lf',
+          gender: 'FEMALE',
+          label: 'Total Local Sewadar – Female',
+          value: data.byLocality?.local?.female ?? 0,
           hint: data.scopeLabel,
           icon: '\u{1F469}',
           tone: 'violet',
-          to: '/sewadar-list?metric=total&gender=FEMALE',
+          to: '/sewadar-list?metric=total&gender=FEMALE&locality=LOCAL',
+        },
+        {
+          key: 'of',
+          gender: 'FEMALE',
+          label: 'Total Outstation Sewadar – Female',
+          value: data.byLocality?.outstation?.female ?? 0,
+          hint: data.scopeLabel,
+          icon: '\u{1F469}',
+          tone: 'violet',
+          to: '/sewadar-list?metric=total&gender=FEMALE&locality=OUTSTATION',
         },
         {
           key: 'pm',
+          gender: 'MALE',
           label: 'Present Today – Male',
           value: data.presentByGender?.male ?? 0,
           hint: longDate(data.today),
@@ -189,6 +232,7 @@ export default function Home() {
         },
         {
           key: 'pf',
+          gender: 'FEMALE',
           label: 'Present Today – Female',
           value: data.presentByGender?.female ?? 0,
           hint: longDate(data.today),
@@ -202,34 +246,6 @@ export default function Home() {
           ),
         },
         {
-          key: 'am',
-          label: 'Absent Today – Male',
-          value: data.absentByGender?.male ?? 0,
-          hint: longDate(data.today),
-          icon: '⚠',
-          tone: 'red',
-          to: '/sewadar-list?metric=absent&gender=MALE',
-          trend: trend(
-            data.absentByGender?.male ?? 0,
-            data.absentByGenderYesterday?.male ?? 0,
-            'from yesterday',
-          ),
-        },
-        {
-          key: 'af',
-          label: 'Absent Today – Female',
-          value: data.absentByGender?.female ?? 0,
-          hint: longDate(data.today),
-          icon: '⚠',
-          tone: 'red',
-          to: '/sewadar-list?metric=absent&gender=FEMALE',
-          trend: trend(
-            data.absentByGender?.female ?? 0,
-            data.absentByGenderYesterday?.female ?? 0,
-            'from yesterday',
-          ),
-        },
-        {
           key: 'q',
           label: 'Pending Requests',
           value: data.pendingRequests,
@@ -239,7 +255,7 @@ export default function Home() {
           to: '/requests',
           trend: trend(data.pendingRequests, data.pendingRequestsLastWeek, 'from last week'),
         },
-      ]
+      ].filter((card) => !card.gender || showsGender(card.gender))
 
   // Only actions this role can actually complete.
   const actions = [

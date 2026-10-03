@@ -4,8 +4,8 @@ import ProtectedRoute from './auth/ProtectedRoute'
 import AppLayout from './layout/AppLayout'
 import Login from './pages/Login'
 import Home from './pages/Home'
-import BadgeDetails from './pages/BadgeDetails'
-import Sewadars from './pages/Sewadars'
+import BadgeSection from './pages/BadgeSection'
+import SewadarSection from './pages/SewadarSection'
 import SewadarList from './pages/SewadarList'
 import Attendance from './pages/Attendance'
 import Reports from './pages/Reports'
@@ -40,7 +40,7 @@ export default function App() {
             path="/badges"
             element={
               <ProtectedRoute screen="BADGES">
-                <BadgeDetails />
+                <BadgeSection />
               </ProtectedRoute>
             }
           />
@@ -56,7 +56,7 @@ export default function App() {
             path="/sewadars"
             element={
               <ProtectedRoute screen="SEWADAR">
-                <Sewadars />
+                <SewadarSection />
               </ProtectedRoute>
             }
           />

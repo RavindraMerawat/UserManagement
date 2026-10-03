@@ -59,7 +59,7 @@ public class AttendanceController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "25") int size) {
 
         Pageable pageable = PageRequest.of(page, Math.min(size, 200),
                 Sort.by(Sort.Direction.DESC, "attendanceDate").and(Sort.by("id")));

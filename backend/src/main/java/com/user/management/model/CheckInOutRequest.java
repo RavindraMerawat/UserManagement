@@ -23,7 +23,7 @@ public record CheckInOutRequest(
 
         @NotNull(message = "Sewadar is required") Long sewadarId,
 
-        @Schema(description = "Defaults to ROSTER_SEWA when omitted")
+        @Schema(description = "Defaults to DAILY_SEWA when omitted")
         SewaType sewaType,
 
         @Schema(description = "Defaults to today. Cannot be a future date.")

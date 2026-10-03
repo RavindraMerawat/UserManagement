@@ -25,20 +25,23 @@ const METRICS = {
   absent: { status: 'ABSENT', title: 'Absent Today', blurb: 'Marked absent today' },
 }
 
-/** Whole years, counting a birthday that has not arrived this year as not yet had. */
-function age(dateOfBirth) {
-  if (!dateOfBirth) return '-'
-  const birth = new Date(`${dateOfBirth}T00:00:00`)
-  if (Number.isNaN(birth.getTime())) return '-'
-  const today = new Date()
-  const years = today.getFullYear() - birth.getFullYear()
-  const beforeBirthday =
-    today.getMonth() < birth.getMonth() ||
-    (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
-  return years - (beforeBirthday ? 1 : 0)
+/**
+ * 8.75 -> 08:45. The day's hours as a clock reads them.
+ *
+ * <p>A dash where there is no check out yet: the hours are the distance between
+ * check in and check out, so until the second one exists there is no number to
+ * show, and a 0 would read as "was here and did nothing".</p>
+ */
+function hoursLabel(hours) {
+  if (hours == null) return '-'
+  const total = Math.round(hours * 60)
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 const GENDER_LABEL = { MALE: 'Male', FEMALE: 'Female' }
+const LOCALITY_LABEL = { LOCAL: 'Local', OUTSTATION: 'Outstation' }
 
 const PAGE_SIZE = 25
 
@@ -50,6 +53,7 @@ export default function SewadarList() {
   const metric = METRICS[key] || METRICS.total
   // The dashboard card that opened this list may have counted one gender only.
   const gender = params.get('gender') || ''
+  const locality = params.get('locality') || ''
   const page = Number(params.get('page') || 0)
 
   const [result, setResult] = useState(null)
@@ -63,13 +67,14 @@ export default function SewadarList() {
       .byStatus({
         status: metric.status || undefined,
         gender: gender || undefined,
+        locality: locality || undefined,
         page,
         size: PAGE_SIZE,
       })
       .then(setResult)
       .catch((err) => setError(errorMessage(err, 'Could not load the list')))
       .finally(() => setLoading(false))
-  }, [metric.status, gender, page])
+  }, [metric.status, gender, locality, page])
 
   useEffect(load, [load])
 
@@ -85,6 +90,10 @@ export default function SewadarList() {
         <div>
           <h2 className="list-title">
             {metric.title}
+            {/* The card that was tapped, said back: "All Sewadars · Local · Male". */}
+            {locality && (
+              <span className="list-title-qualifier"> · {LOCALITY_LABEL[locality] || locality}</span>
+            )}
             {gender && <span className="list-title-qualifier"> · {GENDER_LABEL[gender] || gender}</span>}
           </h2>
           <p className="list-sub">
@@ -112,15 +121,14 @@ export default function SewadarList() {
               <thead>
                 <tr>
                   <th style={{ width: 62 }}>Photo</th>
-                  <th>Badge No</th>
+                  <th>GR. No</th>
                   <th>Name</th>
                   <th>F/H Name</th>
                   <th>Mobile No</th>
-                  <th>Age</th>
                   <th>Zone</th>
                   <th>Area</th>
-                  <th>Point</th>
-                  <th>Blood Group</th>
+                  {/* Check in to check out for the day this tile counted. */}
+                  <th>Today Hours</th>
                 </tr>
               </thead>
               <tbody>
@@ -140,15 +148,13 @@ export default function SewadarList() {
                       <td>{row.name}</td>
                       <td>{row.fatherOrHusbandName || '-'}</td>
                       <td>{row.mobile || '-'}</td>
-                      <td>{age(row.dateOfBirth)}</td>
                       <td>{row.zoneName || '-'}</td>
                       <td>{row.area || '-'}</td>
-                      <td>{row.centerPoint || '-'}</td>
-                      <td>{row.bloodGroup || '-'}</td>
+                      <td>{hoursLabel(row.hoursOnDate)}</td>
                     </tr>
                   ))
                 ) : (
-                  <EmptyRow colSpan={10}>
+                  <EmptyRow colSpan={8}>
                     No sewadars {metric.status ? 'with this status today' : 'to show'}.
                   </EmptyRow>
                 )}

@@ -18,7 +18,7 @@ public record BulkCheckInOutRequest(
         @Size(max = 500, message = "Up to 500 sewadars can be marked in one go")
         List<Long> sewadarIds,
 
-        @Schema(description = "Defaults to ROSTER_SEWA when omitted")
+        @Schema(description = "Defaults to DAILY_SEWA when omitted")
         SewaType sewaType,
 
         @Schema(description = "Defaults to today. Cannot be a future date.")

@@ -1,5 +1,6 @@
 package com.user.management;
 
+import com.user.management.entity.Locality;
 import com.user.management.entity.Role;
 import com.user.management.entity.SewaType;
 import com.user.management.entity.User;
@@ -98,7 +99,8 @@ class AadharPrivacyTest {
         sewadarService.create(request("A-001", "Amrit Kaur", north.getId(), AADHAR));
 
         signInAs(Role.ZONE_INCHARGE, Set.of(north.getId()), null);
-        List<SewadarResponse> rows = sewadarService.search(null, null, true, org.springframework.data.domain.PageRequest
+        List<SewadarResponse> rows = sewadarService.search(null, null, null, null, null,
+                org.springframework.data.domain.PageRequest
                 .of(0, 20, org.springframework.data.domain.Sort.by("name"))).content();
 
         assertThat(rows).hasSize(1);
@@ -139,14 +141,14 @@ class AadharPrivacyTest {
         sewadarService.create(request("B-001", "Other Person", south.getId(), "999988887777"));
 
         List<SewadarLookupResponse> asAdmin =
-                checkInOutService.lookup(AADHAR, SewaType.ROSTER_SEWA, null);
+                checkInOutService.lookup(AADHAR, SewaType.DAILY_SEWA, null);
         assertThat(asAdmin).extracting(SewadarLookupResponse::badgeNumber).containsExactly("A-001");
         assertThat(asAdmin.getFirst().aadharNumber()).isEqualTo(AADHAR);
         assertThat(asAdmin.getFirst().aadharMasked()).isFalse();
 
         signInAs(Role.SUPERVISOR, Set.of(north.getId()), null);
         List<SewadarLookupResponse> asSupervisor =
-                checkInOutService.lookup(AADHAR, SewaType.ROSTER_SEWA, null);
+                checkInOutService.lookup(AADHAR, SewaType.DAILY_SEWA, null);
         assertThat(asSupervisor).hasSize(1);
         assertThat(asSupervisor.getFirst().aadharMasked()).isTrue();
         assertThat(asSupervisor.getFirst().aadharNumber()).isEqualTo("XXXX XXXX 9012");
@@ -158,15 +160,15 @@ class AadharPrivacyTest {
         signInAs(Role.ADMIN, Set.of(), null);
         sewadarService.create(request("A-001", "Amrit Kaur", north.getId(), AADHAR));
 
-        assertThat(checkInOutService.lookup(AADHAR, SewaType.ROSTER_SEWA, null))
+        assertThat(checkInOutService.lookup(AADHAR, SewaType.DAILY_SEWA, null))
                 .extracting(SewadarLookupResponse::badgeNumber).containsExactly("A-001");
 
         // Formatted the way it is printed on the card.
-        assertThat(checkInOutService.lookup("1234 5678 9012", SewaType.ROSTER_SEWA, null))
+        assertThat(checkInOutService.lookup("1234 5678 9012", SewaType.DAILY_SEWA, null))
                 .extracting(SewadarLookupResponse::badgeNumber).containsExactly("A-001");
 
         // A partial number is not an Aadhaar and must not match one.
-        assertThat(checkInOutService.lookup("12345678", SewaType.ROSTER_SEWA, null)).isEmpty();
+        assertThat(checkInOutService.lookup("12345678", SewaType.DAILY_SEWA, null)).isEmpty();
     }
 
     @Test
@@ -210,10 +212,35 @@ class AadharPrivacyTest {
     // ---- helpers ----
 
     private SewadarRequest request(String badge, String name, Long zoneId, String aadhar) {
-        return new SewadarRequest(badge, false, name, null, null, null, zoneId, null,
-                aadhar, null, null, null, null, null, null, null, null, null, null,
-                // exempted, active, createLogin, loginUsername
-                false, true, false, null);
+        // Written out one line per field: this record has grown twice, and a row of
+        // bare nulls put the Aadhaar number into the blood group column last time.
+        return new SewadarRequest(
+                badge,          // badgeNumber
+                false,          // badgeReceived
+                name,
+                null,           // fatherOrHusbandName
+                null,           // dateOfBirth
+                null,           // age
+                null,           // mobile
+                zoneId,
+                null,           // address
+                aadhar,
+                null,           // bloodGroup
+                null,           // extraZoneIds
+                null,           // area
+                null,           // grouping
+                Locality.LOCAL,
+                null,           // centerPoint
+                null,           // gender
+                null,           // email
+                null,           // department
+                null,           // status
+                null,           // designationId
+                null,           // sewaPointId
+                null,           // joiningDate
+                false,          // exempted
+                false,          // createLogin
+                null);          // loginUsername
     }
 
     /** Puts a principal for the given role into the security context. */
@@ -231,7 +258,7 @@ class AadharPrivacyTest {
                 .enabled(true)
                 .build());
 
-        AppUserPrincipal principal = new AppUserPrincipal(user, sewadarId);
+        AppUserPrincipal principal = new AppUserPrincipal(user, sewadarId, null);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
     }

@@ -22,9 +22,16 @@ public record MonthlyReportResponse(
             long halfDays,
             long leaveDays,
             long absentDays,
-            long rosterSewaDays,
+            long dailySewaDays,
             long constructionSewaDays,
             double totalHours,
+            /**
+             * The rows' effective hours added up - each rounded first, so the column
+             * on screen adds to the figure under it.
+             */
+            long effectiveHours,
+            /** The rows' effective days added up. */
+            double effectiveDays,
             double averageAttendancePercent
     ) {
     }

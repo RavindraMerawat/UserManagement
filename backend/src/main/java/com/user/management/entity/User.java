@@ -48,9 +48,43 @@ public class User extends Auditable {
     @Column(name = "mobileNo", length = 20)
     private String mobile;
 
+    /**
+     * The role this account holds, from the roles table - shown on the screens as
+     * "Designation". This is what the permission rules read.
+     *
+     * <p>The {@code role} enum below stays because Spring Security matches coarse
+     * authorities on it, but it is derived from this rather than chosen separately.
+     * One thing to pick on the form, one thing the rules consult.</p>
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "roleId")
+    private SewadarRole sewadarRole;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private Role role;
+
+    /**
+     * The GR. No of the sewadar this login belongs to, as the office writes it.
+     *
+     * <p>Kept on the account rather than looked up through a link, because an office
+     * account is often made before anybody decides which record it belongs to, and
+     * because the number is what the office recognises an account by.</p>
+     */
+    @Column(length = 40)
+    private String badgeNo;
+
+    /**
+     * Whose register this account reads.
+     *
+     * <p>A male login sees the male sewadars, a female login the female ones; Admin
+     * sees both. It is on the account and not derived from a linked sewadar record
+     * because most accounts have no such link - see {@code DataScope}, which is where
+     * this ends up being applied.</p>
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private Gender gender;
 
     /**
      * Zones this account may access. Empty for global-scope roles (ADMIN, OFFICE_ADMIN,

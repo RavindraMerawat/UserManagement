@@ -10,7 +10,7 @@ package com.user.management;
  */
 public final class AppInfo {
 
-    public static final String NAME = "Pandal Office Management";
+    public static final String NAME = "Pandal Department";
 
     private AppInfo() {
     }

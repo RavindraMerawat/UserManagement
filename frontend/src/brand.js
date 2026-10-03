@@ -10,10 +10,10 @@
  * `OpenApiConfig` and `ReportExporter` on the backend.</p>
  */
 export const BRAND = {
-  name: 'Pandal Office Management',
+  name: 'Pandal Department',
   tagline: 'People · Service · Community',
   /** Two letters for the square mark, where a logo file would otherwise go. */
-  mark: 'PO',
+  mark: 'PD',
   headline: 'Together We Serve',
   lede: 'People · Service · Society',
   quote: '“Small acts of service make a big difference.”',

@@ -18,6 +18,21 @@ export function isoDate(date = new Date()) {
   return date.toLocaleDateString('en-CA')
 }
 
+/**
+ * Now, as yyyyMMdd-HHmmss, for stamping a downloaded file.
+ *
+ * Local time for the same reason the dates above are: a file saved at half past
+ * midnight in Indore should carry that date, not yesterday's UTC one. Digits and
+ * a dash only - a colon is not a filename on Windows.
+ */
+export function stampNow(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return (
+    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
+    `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+  )
+}
+
 /** Today, where the person is. */
 export function todayIso() {
   return isoDate()

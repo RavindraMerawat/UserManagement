@@ -50,7 +50,7 @@ export default function AttendanceRecords({
       sewaType: filters.sewaType || undefined,
       status: filters.status || undefined,
       page,
-      size: 20,
+      size: 25,
     }),
     [filters, page],
   )

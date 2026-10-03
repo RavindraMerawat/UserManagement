@@ -7,11 +7,26 @@ import PastAttendance from './attendance/PastAttendance'
 import ZoneAttendance from './attendance/ZoneAttendance'
 import AttendanceRecords from './attendance/AttendanceRecords'
 
+/*
+ * What the live screens mark. Attendance is keyed by (sewadar, date, sewa type),
+ * so the value still travels with every call - it is simply no longer a question
+ * the two live screens ask. Marking someone in is marking them in; the office does
+ * not sort today's arrivals by kind of sewa at the desk.
+ */
+const LIVE_SEWA_TYPE = 'DAILY_SEWA'
+
 export default function Attendance() {
-  const { canMarkAttendance, isSewadar, canManageSewadars } = useAuth()
+  const { canMarkAttendance, isSewadar, canManageAttendanceRecords, canUseFullAttendance } =
+    useAuth()
+  /*
+   * A sewadar's own history is a different thing from the office's register of
+   * everyone, even though one screen draws both: the first is their own data and
+   * stays with them, the second is the office's and is the Admin's and the Office
+   * Incharge's.
+   */
+  const canOpenRecords = isSewadar || canManageAttendanceRecords
   const [tab, setTab] = useState(canMarkAttendance ? 'mark' : 'records')
 
-  const [sewaType, setSewaType] = useState('ROSTER_SEWA')
   const [zones, setZones] = useState([])
   const [options, setOptions] = useState({ sewaTypes: [], attendanceStatuses: [] })
   const [error, setError] = useState('')
@@ -22,28 +37,29 @@ export default function Attendance() {
     metaApi.options().then(setOptions).catch(() => {})
   }, [])
 
+  /*
+   * Everyone who marks sees Mark Attendance. The rest of the module - marking a
+   * zone sheet at once, and entering a day that has already gone - is the office's
+   * own work: the Admin, the Office Incharge and the Office Sewadar. A co-ordinator
+   * at the desk marks the person in front of them and nothing else.
+   */
   const tabs = [
     canMarkAttendance && { key: 'mark', label: 'Mark Attendance' },
-    canMarkAttendance && { key: 'zone', label: 'Zone Attendance' },
+    canMarkAttendance && canUseFullAttendance && { key: 'zone', label: 'Zone Attendance' },
     // A missed day is its own job, with typed times and no clock, so it gets its
     // own tab rather than a date field on the live Mark Attendance screen.
-    canMarkAttendance && { key: 'past', label: 'Manage Past Attendance' },
-    { key: 'records', label: isSewadar ? 'My Attendance' : 'Records' },
+    canMarkAttendance &&
+      canUseFullAttendance && { key: 'past', label: 'Manage Past Attendance' },
+    canOpenRecords && {
+      key: 'records',
+      label: isSewadar ? 'My Attendance' : 'All Attendance Record',
+    },
   ].filter(Boolean)
 
-  /*
-   * The sewa type lives here, above the tabs, because an attendance row is keyed
-   * by (sewadar, date, sewa type) - so two tabs set to different types are looking
-   * at two different records for the same person on the same day. Marking someone
-   * in under Construction Sewa on one tab left them reading "not checked in" on
-   * another, and checking them in there wrote a second row. One value, shared, is
-   * what stops that; each tab shows it so nobody has to guess which is in force.
-   */
   const shared = {
     zones,
     sewaTypes: options.sewaTypes || [],
-    sewaType,
-    setSewaType,
+    sewaType: LIVE_SEWA_TYPE,
     onNotice: (message) => {
       setNotice(message)
       setError('')
@@ -77,17 +93,19 @@ export default function Attendance() {
       </div>
 
       {tab === 'mark' && canMarkAttendance && <MarkAttendance {...shared} />}
-      {tab === 'zone' && canMarkAttendance && <ZoneAttendance {...shared} />}
-      {tab === 'past' && canMarkAttendance && (
+      {tab === 'zone' && canMarkAttendance && canUseFullAttendance && <ZoneAttendance {...shared} />}
+      {tab === 'past' && canMarkAttendance && canUseFullAttendance && (
         <PastAttendance {...shared} onViewHistory={() => setTab('records')} />
       )}
-      {tab === 'records' && (
+      {tab === 'records' && canOpenRecords && (
         <AttendanceRecords
           {...shared}
           statuses={options.attendanceStatuses || []}
           isSewadar={isSewadar}
-          canEdit={canMarkAttendance}
-          canDelete={canManageSewadars}
+          // Correcting what was marked is the Admin's and the Office Incharge's,
+          // which is the same rule AttendanceService applies to the two endpoints.
+          canEdit={canManageAttendanceRecords}
+          canDelete={canManageAttendanceRecords}
         />
       )}
     </div>

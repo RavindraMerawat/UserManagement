@@ -1,5 +1,5 @@
 /* =========================================================================
-   Pandal Office Management - design system
+   Pandal Department - design system
 
    One stylesheet, in this order:
 
@@ -253,6 +253,252 @@ textarea {
   width: auto;
 }
 
+/* The GR. No lookup: one field and its button on a line, the button only as wide
+   as its own word rather than stretched by the grid the filters use. */
+.cs-lookup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.cs-lookup .field {
+  flex: 1 1 320px;
+}
+
+.cs-lookup .btn {
+  height: 38px;
+}
+
+/* The seating entry: a date, one of two words and a short number, each as wide as
+   what goes in it rather than sharing the row equally. The two buttons sit on the
+   same line because they are what finishes it. */
+/* A grid, not a flex row, so the entry has one width that the buttons under it can
+   match exactly. Measured columns rather than shares: a date, one of two words and a
+   short number are not three equal things. */
+.ws-entry {
+  display: grid;
+  grid-template-columns: 170px 130px 120px;
+  gap: 10px;
+  align-items: end;
+}
+
+.ws-entry .field {
+  margin: 0;
+  min-width: 0;
+}
+
+.ws-entry .field input,
+.ws-entry .field select {
+  width: 100%;
+}
+
+/* The record block: the three fields and the two buttons, set off from the person
+   above them so the whole thing reads as one act. */
+.ws-record {
+  margin-top: 18px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.ws-record .form-section {
+  margin-top: 0;
+}
+
+.ws-waiting {
+  margin: 10px 0 0;
+}
+
+/* What has already happened to this day's badge, in words under the buttons. */
+.ws-done {
+  margin: 10px 0 0;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+/* The two that finish the entry, on their own line and lined up with the fields
+   above them - the block reads down its left edge, and centring them broke that.
+   Together they are exactly as wide as the three fields: 170 + 130 + 120 and the
+   two 10px gaps, so the entry is one rectangle rather than a row with a tail. */
+.ws-actions {
+  display: grid;
+  /* The three columns above, shared between two buttons: 170 + 130 + 120 and the
+     two gaps. The pair ends exactly where the Badge No box ends. */
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+  width: 440px;
+  max-width: 100%;
+}
+
+.ws-actions .btn {
+  height: 38px;
+}
+
+/* The card whose list is open below it. */
+.tile-open {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lift);
+}
+
+/* Search boxes are one width everywhere.
+   A search box stretched across a wide screen reads as a paragraph field and puts
+   the cursor a long way from the button beside it; what goes in one is a name, a
+   number or a few letters. Capped, not fixed, so it still shrinks on a phone. */
+.mark-search-field,
+.cs-lookup .field,
+.filters .field:first-child {
+  max-width: 420px;
+}
+
+.cs-lookup .field {
+  flex: 1 1 260px;
+}
+
+/* The sewadar being seated: their photo beside their details, because the person
+   is standing at the desk and the photo is how the badge is matched to them. */
+.ws-person {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.ws-person .cs-facts {
+  flex: 1;
+  margin: 0;
+}
+
+/* The sewadar a one-person report is about, named above the month pickers so the
+   report cannot be generated for somebody you did not mean. */
+.report-chosen {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-light);
+  border: 1px solid var(--info-line);
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+/* The matches, when a search finds more than one. Each is a button because that
+   is what it does - it opens that sewadar - and a row of text that turned out to
+   be clickable only after trying it is a worse way to find that out. */
+.cs-hits {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.cs-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+  font-family: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.cs-hit:hover {
+  background: var(--brand-light);
+  border-color: var(--accent);
+}
+
+.cs-hit .muted {
+  font-size: 12.5px;
+}
+
+/* The sewadar the lookup found, set apart from the search above it so the facts
+   and the count being typed for them read as one block. */
+.cs-found {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.cs-facts {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+/* The two things the Bulk Add window can do, side by side and equally reachable. */
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+
+.bulk-steps {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--ink-mid);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+/* The problems found in an uploaded file. Unlike the list tables, the useful
+   column here is a sentence, so it wraps instead of widening the table off-screen. */
+.problem-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.problem-table th,
+.problem-table td {
+  padding: 8px 12px;
+  font-size: 13px;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.problem-table th:first-child,
+.problem-table td:first-child,
+.problem-table th:nth-child(2),
+.problem-table td:nth-child(2) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* Several actions where a card head usually has one; they wrap rather than
+   squeeze the heading on a narrow screen. */
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* A quiet heading over a group of fields, so a long form reads as four short
+   ones. Quiet on purpose - it orients, it does not compete with the labels. */
+.form-section {
+  margin: 22px 0 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -407,6 +653,18 @@ textarea {
 }
 
 .chip-row,
+/* The zone field when a co-ordinator covers several: the same plain box a select
+   wears, holding one line per zone instead of a list that has to be opened. */
+.zone-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -1811,29 +2069,43 @@ table.report-table td {
 .stat-grid {
   display: grid;
   /*
-   * 240px, which puts the dashboard's seven cards on two rows as four and three.
-   * They were tried on a single line and it was the wrong call: at a seventh of
-   * the width a card is all label and no figure. Two roomy rows read faster than
-   * one cramped one.
-   *
-   * A label still gets one line and is clipped if it does not fit, carrying its
-   * full text as a tooltip - a card should not stretch to suit its longest
-   * heading.
+   * A label gets one line and is clipped if it does not fit, carrying its full
+   * text as a tooltip - a card should not stretch to suit its longest heading.
    */
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
 }
 
 /*
- * The dashboard's own grid is pinned to four across on a desktop rather than left
- * to auto-fit. Seven cards under auto-fit re-flow with the window - 5 + 2 wide,
- * 3 + 3 + 1 narrower - and the male/female pairs land in different rows each time.
- * Four columns makes it 4 + 3 at every desktop width, with the pairs together.
+ * Four cards to a row at most, however many the role has.
+ *
+ * It used to be pinned at five, which was the number the Admin saw; a role with
+ * three got three stretched across the width and a role with seven got five and a
+ * ragged two. Four is the width at which the longest label - "Total Outstation
+ * Sewadar - Female" - still reads, and auto-fit fills the row with whatever the
+ * role actually has.
  */
 @media (min-width: 1100px) {
   .tile-grid {
+    /*
+     * Four columns, and a card never takes more than one.
+     *
+     * A quarter each, pinned rather than auto-fit: auto-fit with a pixel minimum
+     * gave three across on this layout, because the dashboard is narrower than the
+     * window by the width of the menu. A role with three cards fills three of the
+     * four and leaves the last empty, which keeps every card the same size on every
+     * screen - a card that stretches to a third because there are only three of
+     * them reads as a different kind of card.
+     */
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  /* At a fifth of the width the figure matters more than the padding around it. */
+  .tile-grid .tile {
+    padding: 16px 14px;
+    gap: 11px;
   }
 }
 
@@ -1930,13 +2202,28 @@ button.tile {
  * One line, always. A clipped label carries its full text in a title attribute,
  * so hovering says what was cut - which is why the markup sets one.
  */
+/*
+ * A tile label wraps to a second line rather than being cut off.
+ *
+ * It used to be one line with an ellipsis, which was fine for "Total Sewadar -
+ * Male" and useless for "Total Outstation Sewadar - Female": four cards in a row
+ * all read "Total Outstatio..." and the only way to tell them apart was to hover.
+ * Two lines are allowed, and the clamp keeps a long one from pushing the number
+ * out of line with its neighbours.
+ */
 .tile-label {
   font-size: 12px;
   color: var(--ink-soft);
   font-weight: 500;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  /* Three lines fit "Total Outstation Sewadar - Female", which is the longest
+     label on the board; the minimum keeps the short ones from shrinking the row. */
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  min-height: 2.8em;
+  line-height: 1.4;
 }
 
 .tile-value {
@@ -2525,6 +2812,33 @@ button.tile {
   max-width: 460px;
 }
 
+.act-grid .btn {
+  height: 40px;
+  width: 100%;
+}
+
+/* One action, at the width the pair used to share, so the button is the obvious
+   next thing on the card rather than a half-width leftover. */
+.act-single {
+  max-width: 460px;
+}
+
+.act-single .btn {
+  height: 40px;
+  width: 100%;
+}
+
+.act-done {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-line);
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .state-grid {
   margin-bottom: 10px;
 }
@@ -2592,13 +2906,6 @@ button.tile {
   background: var(--ink-faint);
 }
 
-.act-grid {
-}
-
-.act-grid .btn {
-  height: 40px;
-  width: 100%;
-}
 
 tr.row-picked td {
   background: var(--brand-light);
@@ -2860,8 +3167,13 @@ tr.row-picked td {
 
   .form-grid,
   .grid-2,
-  .home-cols {
+  .home-cols,
+  .ws-entry {
     grid-template-columns: 1fr;
+  }
+
+  .ws-actions {
+    width: 100%;
   }
 
   .tile-grid,

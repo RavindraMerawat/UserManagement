@@ -1,5 +1,6 @@
 package com.user.management.repository;
 
+import com.user.management.entity.Gender;
 import com.user.management.entity.RequestStatus;
 import com.user.management.entity.ZoneChangeRequest;
 import org.springframework.data.domain.Page;
@@ -20,9 +21,11 @@ public interface ZoneChangeRequestRepository extends JpaRepository<ZoneChangeReq
             where (:status is null or r.status = :status)
               and (:sewadarScopeId is null or r.sewadar.id = :sewadarScopeId)
               and (:zoneIds is null or r.fromZone.id in :zoneIds or r.toZone.id in :zoneIds)
+                and (:scopeGender is null or r.sewadar.gender = :scopeGender)
             """)
     Page<ZoneChangeRequest> search(@Param("status") RequestStatus status,
                                    @Param("zoneIds") Collection<Long> zoneIds,
+                                   @Param("scopeGender") Gender scopeGender,
                                    @Param("sewadarScopeId") Long sewadarScopeId,
                                    Pageable pageable);
 
@@ -38,9 +41,11 @@ public interface ZoneChangeRequestRepository extends JpaRepository<ZoneChangeReq
                    or r.reviewedAt > :asOf)
               and (:sewadarScopeId is null or r.sewadar.id = :sewadarScopeId)
               and (:zoneIds is null or r.fromZone.id in :zoneIds or r.toZone.id in :zoneIds)
+                and (:scopeGender is null or r.sewadar.gender = :scopeGender)
             """)
     long countPendingAsOf(@Param("asOf") Instant asOf,
                           @Param("zoneIds") Collection<Long> zoneIds,
+                          @Param("scopeGender") Gender scopeGender,
                           @Param("sewadarScopeId") Long sewadarScopeId);
 
     /** Requests in scope, optionally narrowed to one status, for the tab strip. */
@@ -49,9 +54,11 @@ public interface ZoneChangeRequestRepository extends JpaRepository<ZoneChangeReq
             where (:status is null or r.status = :status)
               and (:sewadarScopeId is null or r.sewadar.id = :sewadarScopeId)
               and (:zoneIds is null or r.fromZone.id in :zoneIds or r.toZone.id in :zoneIds)
+                and (:scopeGender is null or r.sewadar.gender = :scopeGender)
             """)
     long countByStatusInScope(@Param("status") RequestStatus status,
                               @Param("zoneIds") Collection<Long> zoneIds,
+                              @Param("scopeGender") Gender scopeGender,
                               @Param("sewadarScopeId") Long sewadarScopeId);
 
     @Query("""
@@ -59,8 +66,10 @@ public interface ZoneChangeRequestRepository extends JpaRepository<ZoneChangeReq
             where r.status = :status
               and (:sewadarScopeId is null or r.sewadar.id = :sewadarScopeId)
               and (:zoneIds is null or r.fromZone.id in :zoneIds or r.toZone.id in :zoneIds)
+                and (:scopeGender is null or r.sewadar.gender = :scopeGender)
             """)
     long countInScope(@Param("status") RequestStatus status,
                       @Param("zoneIds") Collection<Long> zoneIds,
+                      @Param("scopeGender") Gender scopeGender,
                       @Param("sewadarScopeId") Long sewadarScopeId);
 }

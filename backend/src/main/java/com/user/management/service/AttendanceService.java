@@ -52,7 +52,7 @@ public class AttendanceService {
         }
         return PageResponse.of(
                 attendanceRepository.search(sewadarId, zoneId, sewaType, status, from, to,
-                        scope.zoneIds(), scope.sewadarId(), pageable),
+                        scope.zoneIds(), scope.gender(), scope.sewadarId(), pageable),
                 AttendanceResponse::from);
     }
 
@@ -132,7 +132,7 @@ public class AttendanceService {
 
     @Transactional
     public AttendanceResponse update(Long id, AttendanceRequest request) {
-        requireMarkPermission();
+        requireRecordPermission();
         Attendance attendance = getInScope(id);
 
         if (request.sewadarId() != null && !request.sewadarId().equals(attendance.getSewadar().getId())) {
@@ -153,9 +153,7 @@ public class AttendanceService {
 
     @Transactional
     public void delete(Long id) {
-        if (!currentUser.canManageSewadars()) {
-            throw new ForbiddenException("Only Admin and Office Admin can delete an attendance entry");
-        }
+        requireRecordPermission();
         attendanceRepository.delete(getInScope(id));
     }
 
@@ -196,9 +194,6 @@ public class AttendanceService {
     private Sewadar loadSewadarForMarking(Long sewadarId) {
         Sewadar sewadar = sewadarRepository.findById(sewadarId)
                 .orElseThrow(() -> NotFoundException.of("Sewadar", sewadarId));
-        if (!sewadar.isActive()) {
-            throw new BadRequestException("Sewadar " + sewadar.getName() + " is inactive");
-        }
         currentUser.requireZoneAccess(sewadar.getZone().getId());
         return sewadar;
     }
@@ -212,6 +207,20 @@ public class AttendanceService {
     private void requireMarkPermission() {
         if (!currentUser.canMarkAttendance()) {
             throw new ForbiddenException("Your role cannot mark or update attendance");
+        }
+    }
+
+    /**
+     * Correcting what was already marked is a narrower right than marking it.
+     *
+     * <p>Most of the office marks attendance; going back over the register and
+     * altering or removing an entry is the Admin's and the Office Incharge's, so it
+     * asks a different question of {@link CurrentUserService} than marking does.</p>
+     */
+    private void requireRecordPermission() {
+        if (!currentUser.canManageAttendanceRecords()) {
+            throw new ForbiddenException(
+                    "Only Admin and Office Incharge can change or remove an attendance entry");
         }
     }
 }

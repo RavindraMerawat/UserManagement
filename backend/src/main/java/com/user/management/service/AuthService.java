@@ -11,6 +11,7 @@ import com.user.management.model.LoginResponse;
 import com.user.management.repository.UserRepository;
 import com.user.management.security.AppUserDetailsService;
 import com.user.management.security.AppUserPrincipal;
+import com.user.management.security.Capabilities;
 import com.user.management.security.CurrentUserService;
 import com.user.management.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,9 @@ public class AuthService {
         String token = jwtService.generateToken(principal);
         log.info("{} signed in as {}", principal.getUsername(), principal.getRole());
 
+        Capabilities.Grant capabilities =
+                Capabilities.of(principal.getRole(), principal.getDesignation());
+
         return new LoginResponse(
                 token,
                 "Bearer",
@@ -68,7 +72,19 @@ public class AuthService {
                 principal.isMustChangePassword(),
                 user.getPhotoUpdatedAt() != null,
                 user.getPhotoUpdatedAt(),
-                menuFor(principal.getRole()));
+                principal.getDesignation(),
+                capabilities.manageSewadars(),
+                capabilities.manageBadges(),
+                capabilities.manageConstruction(),
+                capabilities.markAttendance(),
+                capabilities.manageAttendanceRecords(),
+                capabilities.viewMonthlyReport(),
+                capabilities.fullAttendance(),
+                user.getGender(),
+                capabilities.createZoneRequest(),
+                capabilities.reviewZoneRequest(),
+                capabilities.administer(),
+                Capabilities.menu(capabilities));
     }
 
     /** Re-reads the signed-in account, used by the UI on page refresh. */
@@ -77,6 +93,9 @@ public class AuthService {
         AppUserPrincipal principal = currentUser.principal();
         User user = userRepository.findById(principal.getUserId())
                 .orElseThrow(() -> NotFoundException.of("User", principal.getUserId()));
+        Capabilities.Grant capabilities =
+                Capabilities.of(principal.getRole(), principal.getDesignation());
+
         return new LoginResponse(
                 null,
                 "Bearer",
@@ -93,7 +112,19 @@ public class AuthService {
                 principal.isMustChangePassword(),
                 user.getPhotoUpdatedAt() != null,
                 user.getPhotoUpdatedAt(),
-                menuFor(principal.getRole()));
+                principal.getDesignation(),
+                capabilities.manageSewadars(),
+                capabilities.manageBadges(),
+                capabilities.manageConstruction(),
+                capabilities.markAttendance(),
+                capabilities.manageAttendanceRecords(),
+                capabilities.viewMonthlyReport(),
+                capabilities.fullAttendance(),
+                user.getGender(),
+                capabilities.createZoneRequest(),
+                capabilities.reviewZoneRequest(),
+                capabilities.administer(),
+                Capabilities.menu(capabilities));
     }
 
     @Transactional

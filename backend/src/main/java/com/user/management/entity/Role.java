@@ -36,6 +36,36 @@ public enum Role {
         return "ROLE_" + name();
     }
 
+    /**
+     * The account type a designation from the roles table maps to.
+     *
+     * <p>Five of the designations line up with an account type the security rules
+     * already know. Everything else on the list - Group Incharge, Gate Incharge and
+     * the rest - is an ordinary sewadar as far as this coarse check goes, which is
+     * exactly what the permission matrix grants them anyway.</p>
+     *
+     * <p>This lives here rather than in the service because the screens need the
+     * same answer - which account type a chosen designation implies decides whether
+     * the form asks for zones - and two copies of it would drift.</p>
+     */
+    public static Role forDesignation(String designationName) {
+        if (designationName == null) {
+            return SEWADAR;
+        }
+        // Letters alone: "Co-ordinator" and "Coordinator" are the same designation,
+        // and a hyphen must not decide what an account may do.
+        String key = designationName.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]", "");
+        return switch (key) {
+            case "officeincharge" -> OFFICE_ADMIN;
+            case "officesewadar" -> OFFICE_USER;
+            case "coordinator" -> COORDINATOR;
+            case "zoneincharge" -> ZONE_INCHARGE;
+            case "supervisor" -> SUPERVISOR;
+            default -> SEWADAR;
+        };
+    }
+
     /** Roles that see data for every zone. */
     public static final Set<Role> GLOBAL_SCOPE = Set.of(ADMIN, OFFICE_ADMIN, OFFICE_USER);
 
@@ -50,3 +80,4 @@ public enum Role {
         return ZONE_SCOPE.contains(this);
     }
 }
+    

@@ -56,8 +56,9 @@ the history of how it was built.
 | See all sewadars | ✓ | ✓ | zone | zone | zone | ✓ | own |
 | See all attendance | ✓ | ✓ | zone | zone | zone | ✓ | own |
 | Add / edit / delete sewadar | ✓ | ✓ | | | | | |
-| Mark and update attendance | ✓ | ✓ | ✓ | ✓ | ✓ | | |
-| Delete an attendance entry | ✓ | ✓ | | | | | |
+| Mark and update attendance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| Correct or delete a marked entry | ✓ | ✓ | | | | Incharge | |
+| Open the Monthly Report | ✓ | ✓ | | | | Incharge, Sewadar | own |
 | Raise a zone change request | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | own |
 | Approve / reject a zone change | ✓ | ✓ | | | | | |
 | Manage zones, areas and points | ✓ | ✓ | | | | | |
@@ -65,6 +66,13 @@ the history of how it was built.
 | Manage login accounts | ✓ | ✓\* | | | | | |
 | Open Setup | ✓ | ✓ | | | | | |
 | Reports | ✓ | ✓ | zone | zone | zone | ✓ | own |
+
+> **Office User and attendance.** An Office User marks attendance from the desk;
+> the designation matrix has granted it since designations were introduced, and the
+> URL rule that still refused it was corrected in change set 30. What an Office User
+> may do beyond that depends on their designation - Office Sewadar also carries add,
+> edit and delete on the register, an Office User with no designation carries
+> neither.
 
 **RL-3 — A Sewadar must never see another sewadar's data.** Status: **Done**
 
@@ -150,6 +158,13 @@ photo and every field in three sections: Registration details, Sewa and contact,
 
 **SW-7 — Search.** Status: **Done** — free text over name, F/H name, badge, mobile,
 area, center and department, plus zone and active filters.
+
+**SW-10 — Search by designation.** Status: **Done** — a Designation picker beside Zone
+on the sewadar register, and `designationId` on `GET /api/sewadars`. It narrows the
+text search rather than replacing it, so "asha" + Supervisor is a question the screen
+can ask. A sewadar whose designation has never been filled in still appears when no
+designation is chosen — the designation is a left join for exactly that reason. Change
+set 29.
 
 **SW-8 — Deleting a sewadar with history.** Status: **Done** — deactivated rather than
 removed, so past attendance stays valid.
@@ -279,6 +294,23 @@ report contains exactly their own row, labelled "My Records".
 **RP-7 — Export.** Status: **Done** — Excel (Apache POI, with a styled header and a
 TOTAL row) and CSV, for both monthly and range.
 
+**RP-9 — Monthly report by locality.** Status: **Done** — a Locality picker on the
+Monthly Report filters, opening on **Local** because that is the register the office
+prints almost every time; Outstation and All localities are the other two choices.
+`locality` on `/api/reports/monthly` and its Excel, PDF, CSV and share endpoints, and
+the chosen locality is appended to the title and so to the downloaded file name. The
+**default lives in the screen, not the server**: a request that says nothing about
+locality still covers everyone, so older links and other callers are unchanged. A
+sewadar with no locality recorded falls under All localities and under neither of the
+other two. Change set 31.
+
+**RP-8 — Monthly report by designation.** Status: **Done** — a Designation picker on
+the Monthly Report filters, applied when **Generate report** is pressed, and
+`designationId` on `/api/reports/monthly` with its Excel, PDF, CSV and share
+endpoints. The chosen designation is appended to the report title, so the sheet and
+the downloaded file say what they hold rather than looking like the whole register
+with most of it missing. Change set 29.
+
 ---
 
 ## 6. Requests, zones, accounts
@@ -329,6 +361,14 @@ clear 413 rather than the bare 500 it used to; see change set 17.
 | NF-1 | **Spring Security** | Done | Stateless chain, per-endpoint role rules, `@EnableMethodSecurity` |
 | NF-2 | **Password encoding** | Done | BCrypt everywhere a password is stored |
 | NF-3 | **JWT** for authenticating users | Done | HS512, 8 hour default expiry; no token / garbage / tampered all return 401 |
+| NF-16 | **Messages are written for the office** | Done | A failure says what happened and what to do - "The service is unavailable at the moment - maintenance may be in progress" - and never a port number, a status code or a class name; the diagnostic detail goes to the browser console. Field errors read as the label above the box. The server's own messages are passed through, because they were already written for the office. Change set 34 |
+| NF-15 | **An account reads its own gender's register** | Done | Gender and GR. No live on the login (`users.gender`, `users.badgeNo`), set on the User Account form. `DataScope` carries the gender into every scoped query, for every role except Admin, on top of the zone reach. An account with no gender set sees both, so turning this on takes nothing away until the field is filled in. `GenderScopeTest`. Change set 33 |
+| NF-14 | **The clock is India Standard Time** | Done | The application sets its own default zone to `Asia/Kolkata` (`app.time-zone`), in `main()` before Spring starts and again from the property once it is up. Attendance is stored zone-less, so the JVM's zone decides what gets written; the production server keeps UTC and was recording every check in 5h30m early. `IndiaTimeTest` holds it, and fails if the application is left on the machine's zone. Change set 32 |
+| NF-17 | **Twenty-five rows to a page, everywhere** | Done | Dashboard, Attendance, Sewadars, Reports, Badge Detail and User Accounts all page at 25, server-side default included, instead of the 10/20/50 mix they grew into. Badge Detail, which had no pager at all, has one. Change set 40 |
+| SW-11 | **The three badge lists are three lists** | Done | Issued, Received and Pending are the sewadar search with `badgeIssued`/`badgeReceived` set; before change set 40 the flags stopped at the screen and all three tiles opened the whole register. Searching inside an open list stays inside it. `BadgeFilterTest`. Change set 40 |
+| UA-5 | **The username can be corrected** | Done | The edit dialog carries the username as well as the create form. A rename checks the new name is free and refuses in words rather than with a constraint error, and is written to the log with who did it and the name it replaced. Change set 40 |
+| UA-6 | **An account shows its sewadar's photo** | Done | On the grid and now in the edit dialog too: an account with no picture of its own displays the photo of the sewadar it is linked to, read by id - the bytes are never copied. Uploading still sets a photo on the account itself. Change sets 39, 40 |
+| NF-13 | **One session per browser tab** | Done | The token and profile live in `sessionStorage`, not `localStorage`: two people can be signed in side by side in one browser and neither reaches the other's screens. A token left by an older build is cleared on load. Change set 28 |
 | NF-4 | **CORS** | Done | Driven by `app.cors.allowed-origins`; a foreign origin is rejected |
 | NF-5 | Authorization failures return 403, not 401 | Done | `RestAuthEntryPoints` gives both the same JSON envelope |
 | NF-6 | Photos must not be publicly readable | Done | Endpoint stays authenticated; the UI fetches blobs with the bearer token |

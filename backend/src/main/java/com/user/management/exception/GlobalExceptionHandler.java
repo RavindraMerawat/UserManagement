@@ -12,8 +12,10 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -77,9 +79,43 @@ public class GlobalExceptionHandler {
                             + "photos table needs its schema repair, which runs at startup.",
                     req, null);
         }
-        return body(HttpStatus.CONFLICT,
-                "This record conflicts with existing data (duplicate badge number, zone code or attendance entry)",
-                req, null);
+        return body(HttpStatus.CONFLICT, conflictMessage(cause), req, null);
+    }
+
+    /**
+     * Which value already exists, in the words of the form it was typed on.
+     *
+     * <p>The message used to list every unique key in the schema and leave the
+     * reader to guess - "duplicate badge number, zone code or attendance entry" was
+     * reported once for an account whose email was blank and whose badge number was
+     * not duplicated at all. The database says which constraint it was; this says it
+     * back in the language of the screen.</p>
+     */
+    private String conflictMessage(String cause) {
+        String lower = cause == null ? "" : cause.toLowerCase();
+        if (lower.contains("uk_user_email")) {
+            return "That email address is already on another account.";
+        }
+        if (lower.contains("uk_user_username")) {
+            return "That username is already taken. Choose another.";
+        }
+        if (lower.contains("uk_sewadar_badge") || lower.contains("badgeno")) {
+            return "That GR. No is already on the register.";
+        }
+        if (lower.contains("uk_sewadar_aadhar")) {
+            return "That Aadhaar number is already on another sewadar.";
+        }
+        if (lower.contains("uk_zone_code")) {
+            return "That zone code is already in use.";
+        }
+        if (lower.contains("uk_attendance") || lower.contains("attendance")) {
+            return "That sewadar already has attendance for this day and sewa type.";
+        }
+        if (lower.contains("uk_area_name") || lower.contains("uk_point_name")) {
+            return "That name is already on the list.";
+        }
+        return "Something in this record already exists elsewhere. Check the values that "
+                + "have to be unique - username, email, GR. No, Aadhaar - and try again.";
     }
 
     /** MySQL error 1406 / SQLSTATE 22001 - the value does not fit the column. */
@@ -121,6 +157,36 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleIntegration(IntegrationException ex, HttpServletRequest req) {
         log.error("Integration failure on {}", req.getRequestURI(), ex);
         return body(HttpStatus.BAD_GATEWAY, ex.getMessage(), req, null);
+    }
+
+    /**
+     * A URL that matches no endpoint is a 404, not a fault in the server.
+     *
+     * <p>Without this it falls through to the catch-all below and comes back as
+     * "Something went wrong" with a stack trace in the log - which reads like a bug
+     * in the application when it is really a request for something that is not
+     * there, most often a screen calling an endpoint an older build did not have.</p>
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoRoute(NoResourceFoundException ex,
+                                                             HttpServletRequest req) {
+        log.warn("No endpoint for {} {}", req.getMethod(), req.getRequestURI());
+        return body(HttpStatus.NOT_FOUND,
+                "No endpoint at " + req.getRequestURI()
+                        + ". If this screen is newer than the server, restart the server.",
+                req, null);
+    }
+
+    /**
+     * A path or query value of the wrong type is the caller's mistake, so it is a 400
+     * that names the parameter rather than a 500 that names nothing.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException ex,
+                                                                  HttpServletRequest req) {
+        log.warn("Bad value for {} on {}: {}", ex.getName(), req.getRequestURI(), ex.getValue());
+        return body(HttpStatus.BAD_REQUEST,
+                "\"" + ex.getValue() + "\" is not a valid " + ex.getName(), req, null);
     }
 
     @ExceptionHandler(Exception.class)

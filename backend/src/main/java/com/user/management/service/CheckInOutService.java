@@ -44,7 +44,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class CheckInOutService {
 
-    private static final SewaType DEFAULT_SEWA = SewaType.ROSTER_SEWA;
+    private static final SewaType DEFAULT_SEWA = SewaType.DAILY_SEWA;
     private static final int MAX_LOOKUP_HITS = 25;
 
     private final SewadarRepository sewadarRepository;
@@ -68,7 +68,7 @@ public class CheckInOutService {
                 trimmed.toLowerCase(),
                 // An empty digit string would make the mobile LIKE match everything.
                 digits.isEmpty() ? " " : digits,
-                scope.zoneIds(),
+                scope.zoneIds(), scope.gender(),
                 scope.sewadarId(),
                 PageRequest.of(0, MAX_LOOKUP_HITS));
 
@@ -98,7 +98,7 @@ public class CheckInOutService {
                 s.getZone() == null ? null : s.getZone().getName(),
                 s.getArea(),
                 s.getCenterPoint(),
-                s.isActive(),
+                true,
                 s.getPhotoUpdatedAt() != null,
                 s.getPhotoUpdatedAt(),
                 a == null ? null : a.getId(),
@@ -210,7 +210,7 @@ public class CheckInOutService {
     }
 
     /**
-     * A row that cannot be marked (already checked in, not checked in yet, inactive,
+     * A row that cannot be marked (already checked in, not checked in yet,
      * out of scope) is collected as a skipped row instead of aborting the batch.
      */
     private CheckInOutResult bulk(BulkCheckInOutRequest request, boolean checkingIn) {
@@ -253,9 +253,6 @@ public class CheckInOutService {
     private Sewadar loadForMarking(Long sewadarId) {
         Sewadar sewadar = sewadarRepository.findById(sewadarId)
                 .orElseThrow(() -> NotFoundException.of("Sewadar", sewadarId));
-        if (!sewadar.isActive()) {
-            throw new BadRequestException(sewadar.getName() + " is inactive");
-        }
         currentUser.requireZoneAccess(sewadar.getZone().getId());
         return sewadar;
     }

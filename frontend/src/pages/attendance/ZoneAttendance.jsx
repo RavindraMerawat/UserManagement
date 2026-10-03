@@ -20,7 +20,7 @@ function pretty(time) {
  * Zone wise check in and check out. Pick a zone, tick the sewadars present, then
  * check the whole selection in or out in one call.
  */
-export default function ZoneAttendance({ zones, sewaTypes, sewaType, setSewaType, onNotice, onError }) {
+export default function ZoneAttendance({ zones, sewaType, onNotice, onError }) {
   // The date and time are this sheet's own; the sewa type is the shared one.
   const [header, setHeader] = useState({
     zoneId: '',
@@ -97,6 +97,16 @@ export default function ZoneAttendance({ zones, sewaTypes, sewaType, setSewaType
     )
   }, [rows, filter])
 
+  /*
+   * Of the ticked rows, who each button would actually mark: somebody with no
+   * check in yet can be checked in, and somebody checked in but not out can be
+   * checked out. Nobody is in both lists, and a row already marked both ways is in
+   * neither.
+   */
+  const pickedRows = visible.filter((r) => picked.has(r.id))
+  const canCheckIn = pickedRows.filter((r) => !r.attendance?.inTime)
+  const canCheckOut = pickedRows.filter((r) => r.attendance?.inTime && !r.attendance?.outTime)
+
   const toggle = (id) =>
     setPicked((current) => {
       const next = new Set(current)
@@ -167,15 +177,6 @@ export default function ZoneAttendance({ zones, sewaTypes, sewaType, setSewaType
               {zones.map((z) => (
                 <option key={z.id} value={z.id}>
                   {z.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Sewa type" required>
-            <select value={sewaType} onChange={(e) => setSewaType(e.target.value)}>
-              {sewaTypes.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
                 </option>
               ))}
             </select>
@@ -256,7 +257,7 @@ export default function ZoneAttendance({ zones, sewaTypes, sewaType, setSewaType
                       }
                     />
                   </th>
-                  <th>Badge No</th>
+                  <th>GR. No</th>
                   <th style={{ width: 56 }}>Photo</th>
                   <th>Name</th>
                   <th>Area / Center</th>
@@ -304,27 +305,39 @@ export default function ZoneAttendance({ zones, sewaTypes, sewaType, setSewaType
           </div>
         )}
 
+        {/*
+          Each button is offered only when it would do something. Checking out
+          somebody who never checked in is not a smaller mistake than checking in
+          somebody already in - both used to be accepted here and come back as a
+          row of skips, which reads like a failure the person caused. The counts on
+          the buttons are the people the press would actually mark.
+        */}
         <div className="btn-row" style={{ marginTop: 16 }}>
           <button
             type="button"
             className="btn ok"
-            disabled={busy || picked.size === 0}
+            disabled={busy || canCheckIn.length === 0}
             onClick={() => run('in')}
           >
-            ✓ Check In {picked.size > 0 ? `(${picked.size})` : ''}
+            ✓ Check In {canCheckIn.length > 0 ? `(${canCheckIn.length})` : ''}
           </button>
           <button
             type="button"
             className="btn danger"
-            disabled={busy || picked.size === 0}
+            disabled={busy || canCheckOut.length === 0}
             onClick={() => run('out')}
           >
-            ⇥ Check Out {picked.size > 0 ? `(${picked.size})` : ''}
+            ⇥ Check Out {canCheckOut.length > 0 ? `(${canCheckOut.length})` : ''}
           </button>
         </div>
         <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: 12.5 }}>
-          A sewadar who cannot be marked (already checked in, not checked in yet, inactive) is
-          reported as skipped rather than failing the whole batch.
+          {picked.size === 0
+            ? 'Tick the sewadars to mark, then choose Check In or Check Out.'
+            : canCheckIn.length === 0 && canCheckOut.length === 0
+              ? 'Everyone ticked is already marked in and out for this day.'
+              : canCheckOut.length === 0
+                ? 'Check Out opens once somebody ticked has been checked in.'
+                : `${canCheckIn.length} to check in, ${canCheckOut.length} to check out.`}
         </p>
       </section>
     </div>

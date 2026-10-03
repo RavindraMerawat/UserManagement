@@ -112,7 +112,7 @@ public class ZoneService {
     @Transactional
     public void delete(Long id) {
         Zone zone = getEntity(id);
-        long sewadars = sewadarRepository.countByZoneIdInAndActiveTrue(List.of(id));
+        long sewadars = sewadarRepository.countByZoneIdIn(List.of(id));
         if (sewadars > 0) {
             zone.setActive(false);
             zoneRepository.save(zone);

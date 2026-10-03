@@ -107,18 +107,7 @@ export default function Login() {
         </div>
 
         <div className="hero-content">
-          <div className="hero-text">
-            <h1>
-              Radha Soami
-              <br />
-              Satsang Indore
-            </h1>
-            <p>
-              Manage People. Simplify Processes.
-              <br />
-              Build a Stronger Community.
-            </p>
-          </div>
+         
 
           <div className="feature-list">
             <Feature icon={<Users />} title="Sewadar" subtitle="Management" />
@@ -128,27 +117,7 @@ export default function Login() {
           </div>
         </div>
 
-        <div className="hero-quote">
-          <div className="quote-line" />
-          <p>
-            &ldquo;Small acts of service
-            <br />
-            make a big difference.&rdquo;
-          </p>
-        </div>
-
-        <p className="hero-script" aria-hidden="true">
-          Cloud for a Better Tomorrow
-          <svg width="150" height="12" viewBox="0 0 150 12" fill="none">
-            <path
-              d="M2 8C28 2 74 1 110 4c14 1 26 3 38 6"
-              stroke="#4f9ee8"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </p>
-      </section>
+              </section>
 
       {/* ---------------------------------------------------------- the form */}
       <section className="login-section">

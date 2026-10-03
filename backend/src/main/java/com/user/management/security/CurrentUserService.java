@@ -33,38 +33,81 @@ public class CurrentUserService {
         return principalOrEmpty().map(AppUserPrincipal::getUsername).orElse("system");
     }
 
+    /** What this caller may do, decided by designation with ADMIN overriding. */
+    public Capabilities.Grant grant() {
+        AppUserPrincipal p = principal();
+        return Capabilities.of(p.getRole(), p.getDesignation());
+    }
+
+    /** The designation the rules were read from, for the UI to display. */
+    public String designation() {
+        return principal().getDesignation();
+    }
+
     public Role role() {
         return principal().getRole();
     }
 
-    /** Resolves the data scope for the current user from their role. */
+    /**
+     * How much data this caller can reach.
+     *
+     * <p>Driven by the same grant as everything else: a zone designation sees its
+     * own zones, the office designations see every zone, and anyone else sees only
+     * their own record. A SEWADAR login is always held to its own record whatever
+     * the designation says, because that account exists for exactly that.</p>
+     */
     public DataScope scope() {
         AppUserPrincipal p = principal();
-        Role role = p.getRole();
-        if (role.isGlobalScope()) {
-            return DataScope.global();
+        if (p.getRole() == Role.SEWADAR) {
+            return DataScope.selfOnly(p.getSewadarId());
         }
-        if (role.isZoneScope()) {
-            return DataScope.zones(p.getZoneIds());
+        Capabilities.Grant grant = grant();
+        DataScope scope;
+        if (grant.zoneScoped()) {
+            scope = DataScope.zones(p.getZoneIds());
+        } else if (grant.screens().contains("SEWADAR") || grant.manageSewadars()) {
+            scope = DataScope.global();
+        } else {
+            scope = DataScope.selfOnly(p.getSewadarId());
         }
-        // SEWADAR: own records only.
-        return DataScope.selfOnly(p.getSewadarId());
+        /*
+         * And then the account's own gender, on top of whatever reach the role gave
+         * it: a male login reads the male register, a female login the female one.
+         * Admin is the exception the office asked for - it sees both - and an
+         * account with no gender set is unchanged, so turning this on takes nothing
+         * away from an account until somebody fills the field in.
+         */
+        return p.getRole() == Role.ADMIN ? scope : scope.forGender(p.getGender());
     }
 
-    /** True when the role may create, edit or delete sewadar master data. */
+    /**
+     * True when the caller may create, edit or delete sewadar master data.
+     *
+     * <p>Office work. The zone designations - Co-ordinator, Zone Incharge,
+     * Supervisor - open the Sewadar screen read only.</p>
+     */
     public boolean canManageSewadars() {
-        return switch (role()) {
-            case ADMIN, OFFICE_ADMIN -> true;
-            default -> false;
-        };
+        return grant().manageSewadars();
     }
 
-    /** True when the role may mark or update attendance. */
+    /** True when the caller may mark or update attendance. */
     public boolean canMarkAttendance() {
-        return switch (role()) {
-            case ADMIN, OFFICE_ADMIN, COORDINATOR, ZONE_INCHARGE, SUPERVISOR -> true;
-            default -> false;
-        };
+        return grant().markAttendance();
+    }
+
+    /** May open All Attendance Record, and change or remove an entry on it. */
+    public boolean canManageAttendanceRecords() {
+        return grant().manageAttendanceRecords();
+    }
+
+    /** May open the Monthly Report. */
+    public boolean canViewMonthlyReport() {
+        return grant().viewMonthlyReport();
+    }
+
+    /** May open the whole Attendance module, not only Mark Attendance. */
+    public boolean canUseFullAttendance() {
+        return grant().fullAttendance();
     }
 
     /**
@@ -80,11 +123,13 @@ public class CurrentUserService {
      * @param sewadarId the record being read, or null when that is not known
      */
     public boolean canViewFullAadhar(Long sewadarId) {
-        return switch (role()) {
-            case ADMIN, OFFICE_ADMIN -> true;
-            case SEWADAR -> sewadarId != null && sewadarId.equals(principal().getSewadarId());
-            default -> false;
-        };
+        // Whoever registers and corrects the number may read it in full; everyone
+        // else works from the badge number and sees the masked form. A person may
+        // always read their own.
+        if (grant().manageSewadars()) {
+            return true;
+        }
+        return sewadarId != null && sewadarId.equals(principal().getSewadarId());
     }
 
     /**
@@ -99,18 +144,32 @@ public class CurrentUserService {
      * other.</p>
      */
     public boolean canManageBadges() {
-        return switch (role()) {
-            case ADMIN, OFFICE_ADMIN -> true;
-            default -> false;
-        };
+        return grant().manageBadges();
     }
 
-    /** True when the role may approve or reject a zone change request. */
+    /** Record or update a construction sewa count. Office work, like a badge. */
+    public boolean canManageConstruction() {
+        return grant().manageConstruction();
+    }
+
+    /**
+     * True when the caller may approve or reject a zone change request.
+     *
+     * <p>Admin alone. The office designations raise and read requests but do not
+     * decide them.</p>
+     */
     public boolean canReviewRequests() {
-        return switch (role()) {
-            case ADMIN, OFFICE_ADMIN -> true;
-            default -> false;
-        };
+        return grant().reviewZoneRequest();
+    }
+
+    /** True when the caller may raise a zone change request. */
+    public boolean canCreateZoneRequest() {
+        return grant().createZoneRequest();
+    }
+
+    /** True when the caller may administer login accounts and the Setup lists. */
+    public boolean canAdminister() {
+        return grant().administer();
     }
 
     public void requireZoneAccess(Long zoneId) {

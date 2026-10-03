@@ -1,9 +1,15 @@
 package com.user.management.service;
 
 import com.user.management.entity.Gender;
+import com.user.management.entity.Locality;
+import com.user.management.entity.Attendance;
 import com.user.management.entity.AttendanceStatus;
 import com.user.management.entity.Role;
 import com.user.management.entity.Sewadar;
+import com.user.management.repository.SewaPointRepository;
+import com.user.management.repository.SewadarRoleRepository;
+import com.user.management.entity.SewaPoint;
+import com.user.management.entity.SewadarRole;
 import com.user.management.entity.User;
 import com.user.management.entity.Zone;
 import com.user.management.exception.BadRequestException;
@@ -24,6 +30,7 @@ import com.user.management.security.CurrentUserService;
 import com.user.management.security.DataScope;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -33,6 +40,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 
 /**
@@ -54,25 +63,35 @@ public class SewadarService {
     private final UserRepository userRepository;
     private final ZoneService zoneService;
     private final CurrentUserService currentUser;
+    private final SewadarRoleRepository sewadarRoleRepository;
+    private final SewaPointRepository sewaPointRepository;
     private final PasswordEncoder passwordEncoder;
     private final PhotoService photoService;
 
     @Transactional(readOnly = true)
-    public PageResponse<SewadarResponse> search(String query, Long zoneId, Boolean active, Pageable pageable) {
+    public PageResponse<SewadarResponse> search(String query, Long zoneId, Long designationId,
+                                                Boolean badgeIssued, Boolean badgeReceived,
+                                                Pageable pageable) {
         DataScope scope = currentUser.scope();
         if (zoneId != null) {
             currentUser.requireZoneAccess(zoneId);
         }
+        if (designationId != null && !sewadarRoleRepository.existsById(designationId)) {
+            // An unknown id would come back as an empty list, which reads as "nobody
+            // holds this designation" rather than "that is not a designation".
+            throw new BadRequestException("No designation with id " + designationId);
+        }
         String q = StringUtils.hasText(query) ? query.toLowerCase() : null;
         return PageResponse.of(
-                sewadarRepository.search(q, zoneId, active, scope.zoneIds(), scope.sewadarId(), pageable),
+                sewadarRepository.search(q, zoneId, designationId, badgeIssued, badgeReceived,
+                        scope.zoneIds(), scope.gender(), scope.sewadarId(), pageable),
                 this::toResponse);
     }
 
     /**
      * The people behind one dashboard tile.
      *
-     * <p>A null {@code status} is the Total tile - every active sewadar in scope. A
+     * <p>A null {@code status} is the Total tile - every sewadar in scope. A
      * status is one of the day tiles: the sewadars who have an attendance record with
      * that status on that date. It runs the same query {@code DashboardService} counts
      * with, so the grid always holds exactly as many rows as the tile said.</p>
@@ -85,13 +104,39 @@ public class SewadarService {
     public PageResponse<SewadarResponse> dashboardList(AttendanceStatus status,
                                                        LocalDate onDate,
                                                        Gender gender,
+                                                       Locality locality,
                                                        Pageable pageable) {
         DataScope scope = currentUser.scope();
         LocalDate date = onDate == null ? LocalDate.now() : onDate;
-        return PageResponse.of(
-                sewadarRepository.findForDashboard(
-                        status, date, scope.zoneIds(), scope.sewadarId(), gender, pageable),
-                this::toResponse);
+        Page<Sewadar> page = sewadarRepository.findForDashboard(
+                status, date, scope.zoneIds(), scope.gender(), scope.sewadarId(),
+                gender, locality, pageable);
+
+        /*
+         * The day's hours for everybody on this page, in one query rather than one
+         * per row. The tile this list came from is about a day, so "how long were
+         * they here" is the column the office is looking for next; a sewadar with
+         * more than one sewa on the day has them added up, which is what the
+         * question means.
+         */
+        Map<Long, Double> hours = hoursOn(date, page.getContent());
+        return PageResponse.of(page, sewadar ->
+                toResponse(sewadar).withHoursOnDate(hours.get(sewadar.getId())));
+    }
+
+    /** Sewadar id to hours worked on one date, for the rows given. */
+    private Map<Long, Double> hoursOn(LocalDate date, List<Sewadar> sewadars) {
+        if (sewadars.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = sewadars.stream().map(Sewadar::getId).toList();
+        Map<Long, Double> hours = new HashMap<>();
+        for (Attendance a : attendanceRepository.findBySewadarIdInAndAttendanceDate(ids, date)) {
+            if (a.getHours() != null) {
+                hours.merge(a.getSewadar().getId(), a.getHours(), Double::sum);
+            }
+        }
+        return hours;
     }
 
     /**
@@ -101,19 +146,19 @@ public class SewadarService {
     @Transactional(readOnly = true)
     public TabCountsResponse tabCounts() {
         DataScope scope = currentUser.scope();
+        // One number now. The active/inactive split went with the flag itself -
+        // every sewadar on file is simply on file.
         return TabCountsResponse.of(
-                sewadarRepository.countInScope(null, scope.zoneIds(), scope.sewadarId()),
-                "active", sewadarRepository.countInScope(true, scope.zoneIds(), scope.sewadarId()),
-                "inactive", sewadarRepository.countInScope(false, scope.zoneIds(), scope.sewadarId()));
+                sewadarRepository.countInScope(scope.zoneIds(), scope.gender(), scope.sewadarId()));
     }
 
     /** Badge totals, restricted to the same scope as every sewadar search. */
     @Transactional(readOnly = true)
     public BadgeSummaryResponse badgeSummary() {
         DataScope scope = currentUser.scope();
-        long issued = sewadarRepository.countBadges(scope.zoneIds(), scope.sewadarId(), true, null);
-        long received = sewadarRepository.countBadges(scope.zoneIds(), scope.sewadarId(), true, true);
-        long pending = sewadarRepository.countBadges(scope.zoneIds(), scope.sewadarId(), false, null);
+        long issued = sewadarRepository.countBadges(scope.zoneIds(), scope.gender(), scope.sewadarId(), true, null);
+        long received = sewadarRepository.countBadges(scope.zoneIds(), scope.gender(), scope.sewadarId(), true, true);
+        long pending = sewadarRepository.countBadges(scope.zoneIds(), scope.gender(), scope.sewadarId(), false, null);
         return new BadgeSummaryResponse(issued, received, pending);
     }
 
@@ -151,7 +196,7 @@ public class SewadarService {
         if (zoneId != null) {
             currentUser.requireZoneAccess(zoneId);
         }
-        List<Sewadar> sewadars = sewadarRepository.findForAttendanceSheet(zoneId, scope.zoneIds());
+        List<Sewadar> sewadars = sewadarRepository.findForAttendanceSheet(zoneId, scope.zoneIds(), scope.gender());
         return sewadars.stream()
                 .filter(s -> scope.allowsSewadar(s.getId()))
                 .map(this::toResponse)
@@ -206,22 +251,25 @@ public class SewadarService {
                 .name(request.name().trim())
                 .fatherOrHusbandName(trimToNull(request.fatherOrHusbandName()))
                 .dateOfBirth(request.dateOfBirth())
+                .age(request.age())
                 .mobile(trimToNull(request.mobile()))
                 .zone(zone)
                 .address(trimToNull(request.address()))
                 .aadharNumber(aadhar)
                 .bloodGroup(trimToNull(request.bloodGroup()))
+                .extraZones(extraZones(zone, request.extraZoneIds()))
                 .area(trimToNull(request.area()))
+                .grouping(trimToNull(request.grouping()))
+                .locality(request.locality())
                 .centerPoint(trimToNull(request.centerPoint()))
                 .gender(request.gender())
                 .email(email)
-                .city(trimToNull(request.city()))
-                .pincode(trimToNull(request.pincode()))
+                .status(request.status())
+                .role(roleOf(request.designationId()))
+                .sewaPoint(sewaPointOf(request.sewaPointId()))
                 .department(trimToNull(request.department()))
-                .primarySewaType(request.primarySewaType())
                 .joiningDate(request.joiningDate())
                 .exempted(request.exempted() != null && request.exempted())
-                .active(request.active() == null || request.active())
                 .build();
 
         Sewadar saved = sewadarRepository.save(sewadar);
@@ -270,26 +318,27 @@ public class SewadarService {
         sewadar.setName(request.name().trim());
         sewadar.setFatherOrHusbandName(trimToNull(request.fatherOrHusbandName()));
         sewadar.setDateOfBirth(request.dateOfBirth());
+        sewadar.setAge(request.age());
         sewadar.setMobile(trimToNull(request.mobile()));
         sewadar.setAddress(trimToNull(request.address()));
         sewadar.setAadharNumber(aadhar);
         sewadar.setBloodGroup(trimToNull(request.bloodGroup()));
+        sewadar.setExtraZones(extraZones(sewadar.getZone(), request.extraZoneIds()));
         sewadar.setArea(trimToNull(request.area()));
+        sewadar.setGrouping(trimToNull(request.grouping()));
+        sewadar.setLocality(request.locality());
         sewadar.setCenterPoint(trimToNull(request.centerPoint()));
 
         // Additional details.
         sewadar.setGender(request.gender());
         sewadar.setEmail(email);
-        sewadar.setCity(trimToNull(request.city()));
-        sewadar.setPincode(trimToNull(request.pincode()));
+        sewadar.setStatus(request.status());
+        sewadar.setRole(roleOf(request.designationId()));
+        sewadar.setSewaPoint(sewaPointOf(request.sewaPointId()));
         sewadar.setDepartment(trimToNull(request.department()));
-        sewadar.setPrimarySewaType(request.primarySewaType());
         sewadar.setJoiningDate(request.joiningDate());
         if (request.exempted() != null) {
             sewadar.setExempted(request.exempted());
-        }
-        if (request.active() != null) {
-            sewadar.setActive(request.active());
         }
         if (request.zoneId() != null && !request.zoneId().equals(sewadar.getZone().getId())) {
             // A direct zone edit is an admin action; everyone else must raise a zone change request.
@@ -317,10 +366,11 @@ public class SewadarService {
                 .isEmpty();
 
         if (hasHistory) {
-            sewadar.setActive(false);
-            sewadarRepository.save(sewadar);
-            log.info("Sewadar {} deactivated (attendance history retained)", sewadar.getBadgeNumber());
-            return;
+            // There is no "retired" state to move them to any more, and deleting
+            // would take the record out from under its own attendance rows.
+            throw new BadRequestException(sewadar.getName()
+                    + " has attendance recorded and cannot be deleted. "
+                    + "The history would be left without the person it belongs to.");
         }
         User login = sewadar.getUser();
         sewadar.setUser(null);
@@ -443,6 +493,41 @@ public class SewadarService {
     }
 
     /** Keeps blank form inputs out of the database as empty strings. */
+    /** Null clears the field; an unknown id is a bad request, not a silent null. */
+    private SewadarRole roleOf(Long id) {
+        if (id == null) {
+            return null;
+        }
+        return sewadarRoleRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("Designation", id));
+    }
+
+    private SewaPoint sewaPointOf(Long id) {
+        if (id == null) {
+            return null;
+        }
+        return sewaPointRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("Sewa point", id));
+    }
+
+    /**
+     * The zones a co-ordinator covers besides their own.
+     *
+     * <p>Their own zone is dropped if it is sent again: it is already on the record,
+     * and keeping it in both places would show the same zone twice on the screen.</p>
+     */
+    private java.util.Set<Zone> extraZones(Zone own, java.util.List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return new java.util.LinkedHashSet<>();
+        }
+        return ids.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(id -> own == null || !id.equals(own.getId()))
+                .distinct()
+                .map(zoneService::getEntity)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
     private String trimToNull(String value) {
         if (value == null) {
             return null;

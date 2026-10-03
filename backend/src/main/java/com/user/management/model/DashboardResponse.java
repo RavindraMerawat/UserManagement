@@ -28,6 +28,11 @@ public record DashboardResponse(
         GenderSplit absentByGender,
         GenderSplit presentByGenderYesterday,
         GenderSplit absentByGenderYesterday,
+        /**
+         * The register split the way the office reads it: local men and women, and
+         * the same for the sewadars who travel in.
+         */
+        LocalitySplit byLocality,
         long presentToday,
         long absentToday,
         long leaveToday,
@@ -68,5 +73,15 @@ public record DashboardResponse(
 
     /** A count split by gender. `other` covers OTHER and records with none. */
     public record GenderSplit(long male, long female, long other) {
+    }
+
+    /**
+     * The register by locality, each side split by gender.
+     *
+     * <p>{@code unrecorded} is the sewadars whose locality has never been filled in.
+     * They are shown rather than hidden: a dashboard whose parts do not add up to
+     * the total is a dashboard nobody trusts.</p>
+     */
+    public record LocalitySplit(GenderSplit local, GenderSplit outstation, GenderSplit unrecorded) {
     }
 }

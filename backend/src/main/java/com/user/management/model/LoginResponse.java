@@ -2,6 +2,8 @@ package com.user.management.model;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import com.user.management.entity.Gender;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -51,6 +53,34 @@ public record LoginResponse(
 
         @Schema(description = "Screens this role may open, mirrored by the client's route guards.",
                 example = "[\"HOME\",\"SEWADAR\",\"ATTENDANCE\"]")
+        /*
+         * The designation the permission rules were read from, and the answers they
+         * gave. The browser gets the answers rather than the rules: one matrix, on
+         * the server, is the only way the menu and the API can agree about who may
+         * do what.
+         */
+        String designation,
+        boolean canManageSewadars,
+        boolean canManageBadges,
+        boolean canManageConstruction,
+        boolean canMarkAttendance,
+        /** Open All Attendance Record, and correct what is on it. */
+        boolean canManageAttendanceRecords,
+        /** Open the Monthly Report. */
+        boolean canViewMonthlyReport,
+        /** Open Zone Attendance and Manage Past Attendance, not only Mark Attendance. */
+        boolean canUseFullAttendance,
+        /**
+         * Whose register this account reads, or null for both.
+         *
+         * <p>The screens need it as well as the server: a female account should not
+         * be shown a card counting men, even one reading zero. The server still
+         * narrows the data; this only stops the screen asking.</p>
+         */
+        Gender gender,
+        boolean canCreateZoneRequest,
+        boolean canReviewRequests,
+        boolean canAdminister,
         List<String> menu
 ) {
 }

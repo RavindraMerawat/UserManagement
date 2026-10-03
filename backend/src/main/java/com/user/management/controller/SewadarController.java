@@ -5,8 +5,11 @@ import com.user.management.model.BadgeSummaryResponse;
 import com.user.management.model.SewadarRequest;
 import com.user.management.model.SewadarResponse;
 import com.user.management.model.TabCountsResponse;
+import com.user.management.model.BulkImportResponse;
+import com.user.management.service.SewadarImportService;
 import com.user.management.service.SewadarService;
 import com.user.management.entity.Gender;
+import com.user.management.entity.Locality;
 import com.user.management.entity.AttendanceStatus;
 import com.user.management.entity.Photo;
 import org.springframework.http.CacheControl;
@@ -36,6 +39,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Tag(name = "3. Sewadar", description = """
@@ -50,6 +55,7 @@ import java.util.List;
 public class SewadarController {
 
     private final SewadarService sewadarService;
+    private final SewadarImportService importService;
 
     @Operation(summary = "Search sewadars within your access scope")
     @GetMapping
@@ -57,19 +63,27 @@ public class SewadarController {
             @Parameter(description = "Free text over name, badge number, mobile and department")
             @RequestParam(required = false) String query,
             @RequestParam(required = false) Long zoneId,
-            @RequestParam(required = false) Boolean active,
+            @Parameter(description = "Only sewadars holding this designation")
+            @RequestParam(required = false) Long designationId,
+            @Parameter(description = "true for badges issued, false for not issued. "
+                    + "With badgeReceived it answers the Badge Detail tiles: issued and "
+                    + "not yet collected, issued and collected, not issued at all.")
+            @RequestParam(required = false) Boolean badgeIssued,
+            @Parameter(description = "true for badges collected, false for not collected")
+            @RequestParam(required = false) Boolean badgeReceived,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "25") int size,
             @RequestParam(defaultValue = "name") String sortBy,
             @RequestParam(defaultValue = "asc") String direction) {
 
         Pageable pageable = PageRequest.of(page, Math.min(size, 200),
                 Sort.by(Sort.Direction.fromString(direction), sortBy));
-        return sewadarService.search(query, zoneId, active, pageable);
+        return sewadarService.search(query, zoneId, designationId, badgeIssued, badgeReceived,
+                pageable);
     }
 
     @Operation(summary = "Counts for the list tabs",
-            description = "All, active and inactive within your zones, for the tab strip.")
+            description = "How many sewadars are within your zones, for the tab strip.")
     @GetMapping("/counts")
     public TabCountsResponse counts() {
         return sewadarService.tabCounts();
@@ -85,16 +99,18 @@ public class SewadarController {
                     """)
     @GetMapping("/by-status")
     public PageResponse<SewadarResponse> byStatus(
-            @Parameter(description = "PRESENT, LEAVE or ABSENT. Omit for every active sewadar.")
+            @Parameter(description = "PRESENT, LEAVE or ABSENT. Omit for every sewadar.")
             @RequestParam(required = false) AttendanceStatus status,
             @Parameter(description = "Defaults to today")
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @Parameter(description = "MALE or FEMALE. Omit for every gender.")
             @RequestParam(required = false) Gender gender,
+            @Parameter(description = "LOCAL or OUTSTATION. Omit for both.")
+            @RequestParam(required = false) Locality locality,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
-        return sewadarService.dashboardList(status, date, gender,
+        return sewadarService.dashboardList(status, date, gender, locality,
                 PageRequest.of(page, Math.min(size, 200), Sort.by("name")));
     }
 
@@ -129,7 +145,13 @@ public class SewadarController {
     }
 
     @Operation(summary = "Get one sewadar")
-    @GetMapping("/{id}")
+    /*
+     * Digits only. An id route next to named ones like /template and /counts will
+     * otherwise swallow anything that reaches it before they are registered, and the
+     * failure it produces - "cannot convert template to Long" - says nothing about
+     * the real cause. Constrained, an unknown path is a plain 404.
+     */
+    @GetMapping("/{id:[0-9]+}")
     public SewadarResponse get(@PathVariable Long id) {
         return sewadarService.get(id);
     }
@@ -141,14 +163,14 @@ public class SewadarController {
     }
 
     @Operation(summary = "Update a sewadar", description = "Admin and Office Admin only.")
-    @PutMapping("/{id}")
+    @PutMapping("/{id:[0-9]+}")
     public SewadarResponse update(@PathVariable Long id, @Valid @RequestBody SewadarRequest request) {
         return sewadarService.update(id, request);
     }
 
     @Operation(summary = "Delete a sewadar",
             description = "A sewadar with attendance history is deactivated instead of removed.")
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{id:[0-9]+}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         sewadarService.delete(id);
         return ResponseEntity.noContent().build();
@@ -183,5 +205,47 @@ public class SewadarController {
     @DeleteMapping("/{id}/photo")
     public SewadarResponse deletePhoto(@PathVariable Long id) {
         return sewadarService.deletePhoto(id);
+    }
+
+    // ---------------------------------------------------------- bulk add sewadar
+
+    /** The stamp on a downloaded template: digits and a dash, never a colon. */
+    private static final DateTimeFormatter STAMP =
+            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
+    @Operation(summary = "Download the Bulk Add Sewadar template",
+            description = """
+                    An empty addSewadar-<date>-<time>.xlsx with one column per field.
+                    Required columns are red; Gender, Zone, Designation, Blood Group,
+                    Status, Sewa Point and Exemption are dropdowns filled from the tables
+                    as the file is built. Fill it in, save it as CSV (comma delimited),
+                    and upload that.
+                    """)
+    @GetMapping("/template")
+    public ResponseEntity<byte[]> template() {
+        /*
+         * The name carries the moment it was taken. These are downloaded over and
+         * over, and without a stamp the browser leaves a folder of addSewadar (1),
+         * addSewadar (2) with nothing to say which is which.
+         */
+        String name = "addSewadar-" + LocalDateTime.now().format(STAMP) + ".xlsx";
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header("Content-Disposition", "attachment; filename=\"" + name + "\"")
+                .body(importService.template());
+    }
+
+    @Operation(summary = "Bulk upload sewadars from a filled-in template",
+            description = """
+                    Reads the CSV saved from the template and adds a sewadar per row.
+                    Either every row is good
+                    and all of them are saved, or nothing is saved and the response
+                    lists each problem by line number and column - a half-loaded
+                    register cannot be told apart from a complete one afterwards.
+                    """)
+    @PostMapping(value = "/bulk", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public BulkImportResponse bulkUpload(@RequestPart("file") MultipartFile file) {
+        return importService.importCsv(file);
     }
 }

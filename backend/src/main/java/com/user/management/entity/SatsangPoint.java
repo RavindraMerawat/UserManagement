@@ -1,19 +1,29 @@
 package com.user.management.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
- * A satsang point inside an area - the place a sewadar actually reports to, and the
- * third level of the office's geography after zone and area.
+ * A satsang point, as a list of its own.
+ *
+ * <p>It used to sit inside an area, so the sewadar form would not offer a point
+ * until an area had been chosen. Points are now their own list, picked in any
+ * order.</p>
  */
 @Entity
 @Table(name = "satsang_points",
-        uniqueConstraints = @UniqueConstraint(name = "uk_point_area_name",
-                columnNames = {"areaId", "name"}),
-        indexes = @Index(name = "idx_point_area", columnList = "areaId"))
+        uniqueConstraints = @UniqueConstraint(name = "uk_point_name", columnNames = "name"))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -28,12 +38,6 @@ public class SatsangPoint extends Auditable {
     @NotBlank
     @Column(nullable = false, length = 120)
     private String name;
-
-    /** The area this point sits in; its zone follows from the area. */
-    @NotNull
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "areaId", nullable = false)
-    private Area area;
 
     @Builder.Default
     @Column(nullable = false)

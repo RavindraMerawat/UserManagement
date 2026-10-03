@@ -14,9 +14,9 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Set;
 
 /**
  * Seeds the Setup lists from the area and satsang point names already written on
@@ -26,7 +26,10 @@ import java.util.Map;
  * and without this a sewadar recorded as being in "Indore" would open with an empty
  * Area picker - and saving the form would quietly blank a value that was correct.
  * So on the first start after the change, every distinct name already in use becomes
- * a Setup entry under the zone it was used in.</p>
+ * a Setup entry.</p>
+ *
+ * <p>Both lists are flat: an area belongs to no zone and a point to no area, so a
+ * name appears once however many zones use it.</p>
  *
  * <p>Runs on every start and is a no-op once the names exist, because it only adds
  * what is missing. It never renames or removes anything: names that differ only by
@@ -49,44 +52,23 @@ public class SetupBackfill implements ApplicationRunner {
         int areasAdded = 0;
         int pointsAdded = 0;
 
-        // Keyed by zone and lower-cased name, so the same area is not created twice
-        // within one pass when two sewadars spell it differently in case.
-        Map<String, Area> areasByKey = new LinkedHashMap<>();
-        for (Area area : areaRepository.findAll()) {
-            areasByKey.put(key(area.getZone().getId(), area.getName()), area);
-        }
+        // Lower-cased, so the same name is not created twice in one pass when two
+        // sewadars spell it differently in case.
+        Set<String> areas = new LinkedHashSet<>();
+        areaRepository.findAll().forEach(a -> areas.add(key(a.getName())));
+        Set<String> points = new LinkedHashSet<>();
+        pointRepository.findAll().forEach(p -> points.add(key(p.getName())));
 
         for (Sewadar sewadar : sewadarRepository.findAll()) {
-            if (sewadar.getZone() == null) {
-                continue;
-            }
-            Long zoneId = sewadar.getZone().getId();
-
             String areaName = trimmed(sewadar.getArea());
-            if (areaName == null) {
-                continue;
-            }
-            Area area = areasByKey.get(key(zoneId, areaName));
-            if (area == null) {
-                area = areaRepository.save(Area.builder()
-                        .name(areaName)
-                        .zone(sewadar.getZone())
-                        .active(true)
-                        .build());
-                areasByKey.put(key(zoneId, areaName), area);
+            if (areaName != null && areas.add(key(areaName))) {
+                areaRepository.save(Area.builder().name(areaName).active(true).build());
                 areasAdded++;
             }
 
             String pointName = trimmed(sewadar.getCenterPoint());
-            if (pointName == null) {
-                continue;
-            }
-            if (!pointRepository.existsByAreaIdAndNameIgnoreCase(area.getId(), pointName)) {
-                pointRepository.save(SatsangPoint.builder()
-                        .name(pointName)
-                        .area(area)
-                        .active(true)
-                        .build());
+            if (pointName != null && points.add(key(pointName))) {
+                pointRepository.save(SatsangPoint.builder().name(pointName).active(true).build());
                 pointsAdded++;
             }
         }
@@ -97,15 +79,15 @@ public class SetupBackfill implements ApplicationRunner {
         }
     }
 
-    private static String key(Long zoneId, String name) {
-        return zoneId + "|" + name.toLowerCase(Locale.ROOT);
+    private static String key(String name) {
+        return name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String trimmed(String value) {
         if (value == null) {
             return null;
         }
-        String cleaned = value.trim();
-        return cleaned.isEmpty() ? null : cleaned;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

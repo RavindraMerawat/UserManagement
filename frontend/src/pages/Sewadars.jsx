@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { metaApi, setupApi, sewadarApi, zoneApi } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -11,30 +11,29 @@ import { todayIso } from '../dates'
 
 const EMPTY_FORM = {
   badgeNumber: '',
-  badgeReceived: false,
   // registration fields, in the order they appear on the form
   name: '',
   fatherOrHusbandName: '',
   dateOfBirth: '',
+  age: '',
   mobile: '',
+  designationId: '',
   zoneId: '',
+  extraZoneIds: [],
   address: '',
   aadharNumber: '',
   bloodGroup: '',
   area: '',
+  grouping: '',
+  locality: '',
   centerPoint: '',
   // additional details
   gender: '',
   email: '',
-  city: '',
-  pincode: '',
-  department: '',
-  primarySewaType: '',
+  department: 'Pandal',
+  status: '',
   joiningDate: '',
-  active: true,
   exempted: false,
-  createLogin: false,
-  loginUsername: '',
 }
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']
@@ -55,11 +54,12 @@ function formatAadhar(value) {
 export default function Sewadars() {
   const { canManageSewadars } = useAuth()
 
-  const [filters, setFilters] = useState({ query: '', zoneId: '', active: 'true' })
+  const [filters, setFilters] = useState({ query: '', zoneId: '', designationId: '' })
   const [page, setPage] = useState(0)
   const [result, setResult] = useState(null)
   const [zones, setZones] = useState([])
   const [areas, setAreas] = useState([])
+  const [designations, setDesignations] = useState([])
   const [points, setPoints] = useState([])
   const [counts, setCounts] = useState(null)
   const [options, setOptions] = useState({ genders: [], sewaTypes: [] })
@@ -73,6 +73,17 @@ export default function Sewadars() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(null)
+
+  // Bulk add. The template carries its own instructions - red headings for the
+  // required columns, a dropdown on each column that has a fixed set of values - so
+  // the button downloads it and nothing else.
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [uploadProblems, setUploadProblems] = useState(null)
+  const [uploadError, setUploadError] = useState('')
+  // The file picker is opened by the Upload button rather than sitting on the
+  // window as a field, so the window asks two questions and no more.
+  const filePicker = useRef(null)
   const [viewing, setViewing] = useState(null)
   const [photoFile, setPhotoFile] = useState(null)
   const [photoBusy, setPhotoBusy] = useState(false)
@@ -82,9 +93,9 @@ export default function Sewadars() {
     () => ({
       query: filters.query || undefined,
       zoneId: filters.zoneId || undefined,
-      active: filters.active === '' ? undefined : filters.active === 'true',
+      designationId: filters.designationId || undefined,
       page,
-      size: 20,
+      size: 25,
     }),
     [filters, page],
   )
@@ -108,6 +119,12 @@ export default function Sewadars() {
     // The Setup lists behind the Area and Point pickers. Only the active ones - a
     // retired area should not be offered for a new record - and only for the roles
     // that can open the form at all, since Setup is theirs.
+    // Designations are both a filter above the grid and a field on the form, so
+    // they are loaded for everyone who can open the screen.
+    setupApi
+      .designations({ active: true })
+      .then(setDesignations)
+      .catch(() => setDesignations([]))
     if (canManageSewadars) {
       setupApi.areas({ active: true }).then(setAreas).catch(() => setAreas([]))
       setupApi.points({ active: true }).then(setPoints).catch(() => setPoints([]))
@@ -119,6 +136,95 @@ export default function Sewadars() {
   useEffect(() => {
     sewadarApi.counts().then(setCounts).catch(() => setCounts(null))
   }, [result])
+
+  const openBulk = () => {
+    setUploadProblems(null)
+    setUploadError('')
+    setBulkOpen(true)
+  }
+
+  const downloadTemplate = async () => {
+    setBulkBusy(true)
+    setError('')
+    try {
+      const name = await sewadarApi.template()
+      // The window has done its first job, so it gets out of the way; the message
+      // stays on the page to say what happened and what comes next.
+      setBulkOpen(false)
+      setNotice(`${name} downloaded. Fill it in, save it as CSV, then upload it here.`)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not download the template'))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  /** Runs as soon as a file is chosen - there is nothing else to ask. */
+  const onFileChosen = async (event) => {
+    const file = event.target.files?.[0]
+    // Cleared straight away so choosing the same file after a fix still counts as
+    // a change and uploads again.
+    event.target.value = ''
+    if (!file) return
+
+    setBulkBusy(true)
+    setUploadError('')
+    setUploadProblems(null)
+    try {
+      const result = await sewadarApi.bulkUpload(file)
+      if (result.problems.length === 0) {
+        setBulkOpen(false)
+        setNotice(`${result.created} sewadars added from ${file.name}`)
+        load()
+      } else {
+        setUploadProblems(result)
+      }
+    } catch (err) {
+      setUploadError(errorMessage(err, 'The upload failed'))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  /*
+   * The two rules this form carries beyond its fields.
+   *
+   * A co-ordinator covers more than one zone, so their Zone field takes several
+   * and everybody else's takes one. And only Indore's areas are grouped, so
+   * Grouping is offered there and left out everywhere else rather than sitting
+   * disabled on every record.
+   */
+  const chosenDesignation = designations.find(
+    (d) => String(d.id) === String(editing?.designationId),
+  )
+  const isCoordinator =
+    (chosenDesignation?.designation || '').toLowerCase().replace(/[^a-z]/g, '') === 'coordinator'
+  const areaHasGrouping = (editing?.area || '').trim().toLowerCase() === 'indore'
+
+  /*
+   * Ticking a zone off the list. The first zone ticked is the one the record
+   * belongs to and the rest are the ones it reaches - so untucking that first one
+   * hands its place to the next, rather than leaving the record in no zone at all.
+   * Areas belong to that first zone, so they start again whenever it changes.
+   */
+  const toggleZone = (value) => {
+    const id = String(value)
+    setEditing((c) => {
+      const own = String(c.zoneId || '')
+      const covered = c.extraZoneIds.map(String)
+      if (own === id) {
+        const [next = '', ...rest] = covered
+        return { ...c, zoneId: next, extraZoneIds: rest, area: '', centerPoint: '' }
+      }
+      if (covered.includes(id)) {
+        return { ...c, extraZoneIds: covered.filter((x) => x !== id) }
+      }
+      if (!own) {
+        return { ...c, zoneId: id, extraZoneIds: covered, area: '', centerPoint: '' }
+      }
+      return { ...c, extraZoneIds: [...covered, id] }
+    })
+  }
 
   const openCreate = () => {
     setFormError('')
@@ -137,28 +243,27 @@ export default function Sewadars() {
     setEditing({
       id: row.id,
       badgeNumber: row.badgeNumber || '',
-      badgeReceived: Boolean(row.badgeReceived),
       name: row.name || '',
       fatherOrHusbandName: row.fatherOrHusbandName || '',
       dateOfBirth: row.dateOfBirth || '',
+      age: row.age ?? '',
       mobile: row.mobile || '',
       zoneId: row.zoneId ?? '',
+      extraZoneIds: (row.extraZoneIds || []).map(String),
       address: row.address || '',
       aadharNumber: row.aadharNumber || '',
       bloodGroup: row.bloodGroup || '',
       area: row.area || '',
+      grouping: row.grouping || '',
+      locality: row.locality || '',
       centerPoint: row.centerPoint || '',
       gender: row.gender || '',
       email: row.email || '',
-      city: row.city || '',
-      pincode: row.pincode || '',
       department: row.department || '',
-      primarySewaType: row.primarySewaType || '',
+      status: row.status || '',
+      designationId: row.designationId ? String(row.designationId) : '',
       joiningDate: row.joiningDate || '',
-      active: row.active,
       exempted: row.exempted ?? false,
-      createLogin: false,
-      loginUsername: '',
       hasLogin: row.hasLogin,
       existingLogin: row.loginUsername,
       photoUpdatedAt: row.photoUpdatedAt,
@@ -168,18 +273,34 @@ export default function Sewadars() {
   const onSave = async (event) => {
     event.preventDefault()
     setFormError('')
+
+    /*
+     * A tick box has no "required" the browser will enforce, so the one rule the
+     * zone field carries is checked here: a record belongs to a zone, whether it
+     * was picked from a list or ticked off one.
+     */
+    if (!editing.zoneId) {
+      setFormError('Pick at least one zone')
+      return
+    }
+
     setSaving(true)
 
     // Blank dates and enums must reach the server as null, not as empty strings.
     const payload = {
       ...editing,
       zoneId: Number(editing.zoneId),
+      // Only a co-ordinator covers more than their own zone; anybody else sends
+      // none, so a designation change cannot leave stale reach behind.
+      extraZoneIds: isCoordinator ? editing.extraZoneIds.map(Number) : [],
       dateOfBirth: editing.dateOfBirth || null,
+      age: editing.age === '' ? null : Number(editing.age),
       joiningDate: editing.joiningDate || null,
       gender: editing.gender || null,
-      primarySewaType: editing.primarySewaType || null,
+      locality: editing.locality || null,
+      status: editing.status || null,
+      designationId: editing.designationId ? Number(editing.designationId) : null,
       aadharNumber: editing.aadharNumber ? editing.aadharNumber.replace(/[^0-9]/g, '') : null,
-      loginUsername: editing.createLogin ? editing.loginUsername || null : null,
     }
     delete payload.hasLogin
     delete payload.existingLogin
@@ -246,9 +367,8 @@ export default function Sewadars() {
     setEditing((current) => ({ ...current, aadharNumber: digits }))
   }
 
-  // Narrow the pickers to what sits under the current selection.
-  const zoneAreas = areas.filter((area) => String(area.zoneId) === String(editing?.zoneId))
-  const areaPoints = points.filter((point) => point.areaName === editing?.area)
+  // Zone, area and satsang point are three separate lists in Setup, so each picker
+  // offers all of its own and none of them narrows another.
 
   /*
    * A record may already name an area or point that is not in the Setup list - one
@@ -271,19 +391,6 @@ export default function Sewadars() {
         </div>
       </div>
 
-      <TabStrip
-        value={filters.active}
-        onChange={(next) => {
-          setPage(0)
-          setFilters((f) => ({ ...f, active: next }))
-        }}
-        tabs={[
-          { key: '', label: 'All', count: counts?.total },
-          { key: 'true', label: 'Active', count: counts?.byStatus?.active },
-          { key: 'false', label: 'Inactive', count: counts?.byStatus?.inactive },
-        ]}
-      />
-
       <Alert kind="error" onClose={() => setError('')}>
         {error}
       </Alert>
@@ -295,9 +402,14 @@ export default function Sewadars() {
         <div className="card-head">
           <h3>Sewadar register</h3>
           {canManageSewadars && (
-            <button type="button" className="btn" onClick={openCreate}>
-              + Add sewadar
-            </button>
+            <div className="head-actions">
+              <button type="button" className="btn" onClick={openCreate}>
+                + Add sewadar
+              </button>
+              <button type="button" className="btn ghost" onClick={openBulk}>
+                Bulk Add Sewadar
+              </button>
+            </div>
           )}
         </div>
 
@@ -328,19 +440,24 @@ export default function Sewadars() {
               ))}
             </select>
           </Field>
-          <Field label="Status">
+          {/* The office looks for "the supervisors" as often as for a name. */}
+          <Field label="Designation">
             <select
-              value={filters.active}
+              value={filters.designationId}
               onChange={(e) => {
                 setPage(0)
-                setFilters({ ...filters, active: e.target.value })
+                setFilters({ ...filters, designationId: e.target.value })
               }}
             >
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-              <option value="">All</option>
+              <option value="">All designations</option>
+              {designations.map((designation) => (
+                <option key={designation.id} value={designation.id}>
+                  {designation.name}
+                </option>
+              ))}
             </select>
           </Field>
+
         </div>
       </div>
 
@@ -353,7 +470,7 @@ export default function Sewadars() {
               <table>
                 <thead>
                   <tr>
-                    <th>Badge No</th>
+                    <th>GR. No</th>
                     <th style={{ width: 62 }}>Photo</th>
                     <th>Name</th>
                     <th>F/H Name</th>
@@ -393,10 +510,14 @@ export default function Sewadars() {
                         <td>{[row.area, row.centerPoint].filter(Boolean).join(' / ') || '-'}</td>
                         <td>{formatAadhar(row.aadharNumber) || '-'}</td>
                         <td>
-                          <Badge
-                            value={row.active ? 'active' : 'inactive'}
-                            label={row.active ? 'Active' : 'Inactive'}
-                          />
+                          {row.statusLabel ? (
+                            <Badge
+                              value={row.status === 'PERMANENT' ? 'active' : 'inactive'}
+                              label={row.statusLabel}
+                            />
+                          ) : (
+                            <span className="muted">-</span>
+                          )}
                         </td>
                         <td>
                           <div className="btn-row">
@@ -458,7 +579,7 @@ export default function Sewadars() {
               Cancel
             </button>
             <button type="submit" form="sewadar-form" className="btn" disabled={saving}>
-              {saving ? 'Saving...' : editing?.id ? 'Update sewadar' : 'Save sewadar'}
+              {saving ? 'Saving...' : editing?.id ? 'Update sewadar' : 'Save'}
             </button>
           </>
         }
@@ -504,7 +625,7 @@ export default function Sewadars() {
               }}
             />
 
-            <Field label="Badge Number" required>
+            <Field label="GR. No" required>
               <input
                 value={editing.badgeNumber}
                 onChange={set('badgeNumber')}
@@ -513,13 +634,22 @@ export default function Sewadars() {
               />
             </Field>
             <p className="muted" style={{ fontSize: 11.5, margin: '4px 0 16px' }}>
-              The badge number is the unique sewadar id every attendance and report row
+              The GR. No is the unique sewadar id every attendance and report row
               points at.
             </p>
 
+            <p className="form-section">Personal details</p>
             <div className="form-grid">
               <Field label="Name" required>
                 <input value={editing.name} onChange={set('name')} required />
+              </Field>
+
+              <Field label="F/H Name">
+                <input
+                  value={editing.fatherOrHusbandName}
+                  onChange={set('fatherOrHusbandName')}
+                  placeholder="Father or husband name"
+                />
               </Field>
 
               {/*
@@ -548,6 +678,39 @@ export default function Sewadars() {
                 />
               </Field>
 
+              <Field label="Age">
+                <input
+                  value={editing.age}
+                  onChange={(e) =>
+                    setEditing((c) => ({ ...c, age: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) }))
+                  }
+                  inputMode="numeric"
+                  placeholder="34"
+                />
+                {editing.age !== '' && (Number(editing.age) < 1 || Number(editing.age) > 120) && (
+                  <p className="photo-error">Age must be between 1 and 120.</p>
+                )}
+              </Field>
+
+              <Field label="Blood Group">
+                <select value={editing.bloodGroup} onChange={set('bloodGroup')}>
+                  <option value="">Not set</option>
+                  {BLOOD_GROUPS.map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Aadhaar No">
+                <input
+                  value={formatAadhar(editing.aadharNumber)}
+                  onChange={onAadharChange}
+                  inputMode="numeric"
+                  placeholder="1234 5678 9012"
+                />
+              </Field>
               <Field label="Mobile No">
                 <input
                   value={editing.mobile}
@@ -564,125 +727,151 @@ export default function Sewadars() {
               <Field label="Email">
                 <input type="email" value={editing.email} onChange={set('email')} />
               </Field>
-
-              <Field label="Aadhaar No">
-                <input
-                  value={formatAadhar(editing.aadharNumber)}
-                  onChange={onAadharChange}
-                  inputMode="numeric"
-                  placeholder="1234 5678 9012"
-                />
-              </Field>
-
-              <Field label="Zone" required>
-                <select value={editing.zoneId} onChange={set('zoneId')} required>
-                  <option value="">Select a zone</option>
-                  {zones.map((zone) => (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Blood Group">
-                <select value={editing.bloodGroup} onChange={set('bloodGroup')}>
+              {/*
+                Designation first, because it decides what the zone field is: a
+                co-ordinator picks several zones, everybody else picks one.
+              */}
+              <Field label="Designation">
+                <select
+                  value={editing.designationId}
+                  onChange={(e) =>
+                    setEditing((c) => ({
+                      ...c,
+                      designationId: e.target.value,
+                      // The zone field itself changes shape here, so its value
+                      // starts again rather than carrying one pick into a list.
+                      zoneId: '',
+                      extraZoneIds: [],
+                      area: '',
+                      centerPoint: '',
+                    }))
+                  }
+                >
                   <option value="">Not set</option>
-                  {BLOOD_GROUPS.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
+                  {designations.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.designation}
                     </option>
                   ))}
                 </select>
+              </Field>
+
+              <Field label={isCoordinator ? 'Zones' : 'Zone'} required>
+                {isCoordinator ? (
+                  <div className="zone-picks">
+                    {zones.map((zone) => (
+                      <label key={zone.id} className="checkline">
+                        <input
+                          type="checkbox"
+                          checked={
+                            String(editing.zoneId) === String(zone.id) ||
+                            editing.extraZoneIds.includes(String(zone.id))
+                          }
+                          onChange={() => toggleZone(zone.id)}
+                        />
+                        {zone.name}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <select value={editing.zoneId} onChange={set('zoneId')} required>
+                    <option value="">Select a zone</option>
+                    {zones.map((zone) => (
+                      <option key={zone.id} value={zone.id}>
+                        {zone.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isCoordinator && (
+                  <p className="hint">
+                    Tick every zone they cover. The first ticked is their own.
+                  </p>
+                )}
               </Field>
 
               {/*
                 Area and Point come from Setup rather than being typed, so the same
                 place is not recorded three different ways. Both are narrowed by what
                 is above them: areas by the chosen zone, points by the chosen area.
+                They read left to right in that order - zone, then area, then point.
               */}
               <Field label="Area">
                 <select
                   value={editing.area}
-                  onChange={(e) => setEditing((c) => ({ ...c, area: e.target.value, centerPoint: '' }))}
+                  onChange={(e) =>
+                    setEditing((c) => ({
+                      ...c,
+                      area: e.target.value,
+                      // The point is its own list now, so it survives an area change.
+                      // Grouping does not: it belongs to Indore and nowhere else.
+                      grouping:
+                        e.target.value.trim().toLowerCase() === 'indore' ? c.grouping : '',
+                    }))
+                  }
                 >
                   <option value="">Not set</option>
-                  {withCurrent(zoneAreas, editing.area).map((area) => (
+                  {withCurrent(areas, editing.area).map((area) => (
                     <option key={area.id} value={area.name}>
                       {area.name}
                     </option>
                   ))}
                 </select>
-                {editing.zoneId && zoneAreas.length === 0 && (
-                  <p className="hint">No areas set up for this zone yet. Add one under Setup.</p>
+                {areas.length === 0 && (
+                  <p className="hint">No areas set up yet. Add one under Setup.</p>
                 )}
               </Field>
 
+              <Field label="Locality" required>
+                <select value={editing.locality} onChange={set('locality')} required>
+                  <option value="">Select</option>
+                  <option value="LOCAL">Local</option>
+                  <option value="OUTSTATION">Outstation</option>
+                </select>
+              </Field>
+
+              {areaHasGrouping && (
+                <Field label="Grouping" required>
+                  <input
+                    value={editing.grouping}
+                    onChange={set('grouping')}
+                    placeholder="Group inside Indore"
+                    required
+                  />
+                </Field>
+              )}
+
               <Field label="Satsang Point">
-                <select
-                  value={editing.centerPoint}
-                  onChange={set('centerPoint')}
-                  disabled={!editing.area}
-                >
-                  <option value="">{editing.area ? 'Not set' : 'Choose an area first'}</option>
-                  {withCurrent(areaPoints, editing.centerPoint).map((point) => (
+                <select value={editing.centerPoint} onChange={set('centerPoint')}>
+                  <option value="">Not set</option>
+                  {withCurrent(points, editing.centerPoint).map((point) => (
                     <option key={point.id} value={point.name}>
                       {point.name}
                     </option>
                   ))}
                 </select>
-                {editing.area && areaPoints.length === 0 && (
-                  <p className="hint">No satsang points set up for this area yet.</p>
+                {points.length === 0 && (
+                  <p className="hint">No satsang points set up yet. Add one under Setup.</p>
                 )}
               </Field>
 
-              <Field label="Address" wide>
-                <textarea value={editing.address} onChange={set('address')} />
-              </Field>
             </div>
 
-            {/* Kept out of the way so the form stays close to the registration slip,
-                but still editable because the reports read department. */}
-            <button
-              type="button"
-              className="btn ghost small"
-              style={{ marginTop: 16 }}
-              onClick={() => setShowExtras((open) => !open)}
-            >
-              {showExtras ? '- Hide additional details' : '+ Additional details'}
-            </button>
+            {/*
+              Designation is what the permission rules read, so it is on the main
+              form rather than in a collapsed section - out of sight is how it ends
+              up unset. Exempted belongs here too: it qualifies the status beside it.
+            */}
+            <p className="form-section">Role and status</p>
+            <div className="form-grid">
+              <Field label="Status">
+                <select value={editing.status} onChange={set('status')}>
+                  <option value="">Not set</option>
+                  <option value="PERMANENT">Permanent</option>
+                  <option value="OPEN">Open</option>
+                </select>
+              </Field>
 
-            {showExtras && (
-              <div className="form-grid" style={{ marginTop: 14 }}>
-                <Field label="F/H Name">
-                  <input value={editing.fatherOrHusbandName} onChange={set('fatherOrHusbandName')} placeholder="Father or husband name" />
-                </Field>
-                <Field label="Department / sewa group">
-                  <input value={editing.department} onChange={set('department')} />
-                </Field>
-                <Field label="Primary sewa type">
-                  <select value={editing.primarySewaType} onChange={set('primarySewaType')}>
-                    <option value="">Not set</option>
-                    {(options.sewaTypes || []).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="City">
-                  <input value={editing.city} onChange={set('city')} />
-                </Field>
-                <Field label="Pincode">
-                  <input value={editing.pincode} onChange={set('pincode')} maxLength={6} />
-                </Field>
-                <Field label="Joining date">
-                  <input type="date" value={editing.joiningDate} onChange={set('joiningDate')} />
-                </Field>
-              </div>
-            )}
-
-            <div style={{ marginTop: 18, display: 'grid', gap: 10 }}>
               {/*
                 Exempted is excused from attendance - the person stays on the roster
                 and in the reports, and a low figure against their name is expected
@@ -712,44 +901,45 @@ export default function Sewadars() {
                   </label>
                 </div>
               </div>
-
-              <label className="checkline">
-                <input type="checkbox" checked={editing.active} onChange={set('active')} />
-                Active sewadar
-              </label>
-              <label className="checkline">
-                <input type="checkbox" checked={editing.badgeReceived} onChange={set('badgeReceived')} />
-                Badge received by sewadar
-              </label>
-
-              {editing.hasLogin ? (
-                <p className="muted" style={{ margin: 0 }}>
-                  Login already exists: <strong>{editing.existingLogin}</strong>
-                </p>
-              ) : (
-                <>
-                  <label className="checkline">
-                    <input
-                      type="checkbox"
-                      checked={editing.createLogin}
-                      onChange={set('createLogin')}
-                    />
-                    Create a sewadar login so this person can sign in and see their own records
-                  </label>
-                  {editing.createLogin && (
-                    <>
-                      <Field label="Login username (defaults to the badge number)">
-                        <input value={editing.loginUsername} onChange={set('loginUsername')} />
-                      </Field>
-                      <Alert kind="info">
-                        The new login starts with the password <code>Sewa@12345</code> and must be
-                        changed on first sign in.
-                      </Alert>
-                    </>
-                  )}
-                </>
-              )}
             </div>
+
+            {/* Kept out of the way so the form stays close to the registration slip,
+                but still editable because the reports read department. */}
+            <button
+              type="button"
+              className="btn ghost small"
+              style={{ marginTop: 18 }}
+              onClick={() => setShowExtras((open) => !open)}
+            >
+              {showExtras ? '- Hide additional details' : '+ Additional details'}
+            </button>
+
+            {showExtras && (
+              <div className="form-grid" style={{ marginTop: 14 }}>
+                <Field label="Address" wide>
+                  <textarea value={editing.address} onChange={set('address')} />
+                </Field>
+                <Field label="Department">
+                  <input value={editing.department} onChange={set('department')} />
+                </Field>
+                <Field label="Joining date">
+                  <input type="date" value={editing.joiningDate} onChange={set('joiningDate')} />
+                </Field>
+              </div>
+            )}
+
+            {/*
+              Active, Badge received and the login checkbox are gone from this form.
+              Badge issue and collection are recorded on Badge Detail, which is where
+              that work is actually done, and an existing login is shown here for
+              reference.
+            */}
+            {editing.hasLogin && (
+              <p className="muted" style={{ marginTop: 18 }}>
+                Login: <strong>{editing.existingLogin}</strong>
+              </p>
+            )}
+
           </form>
         )}
       </Modal>
@@ -796,21 +986,25 @@ export default function Sewadars() {
                 <p className="view-meta">
                   {viewing.badgeNumber} &middot; {viewing.zoneName}
                 </p>
-                <Badge
-                  value={viewing.active ? 'active' : 'inactive'}
-                  label={viewing.active ? 'Active' : 'Inactive'}
-                />
+                {viewing.statusLabel && (
+                  <Badge
+                    value={viewing.status === 'PERMANENT' ? 'active' : 'inactive'}
+                    label={viewing.statusLabel}
+                  />
+                )}
               </div>
             </div>
 
             <h4 className="view-section">Registration details</h4>
             <dl className="kv">
-              <dt>Badge No</dt>
+              <dt>GR. No</dt>
               <dd>{viewing.badgeNumber}</dd>
               <dt>Name</dt>
               <dd>{viewing.name}</dd>
               <dt>Birth Date</dt>
               <dd>{viewing.dateOfBirth || '-'}</dd>
+              <dt>Age</dt>
+              <dd>{viewing.age ?? '-'}</dd>
               <dt>Mobile No</dt>
               <dd>{viewing.mobile || '-'}</dd>
               <dt>Email</dt>
@@ -820,8 +1014,8 @@ export default function Sewadars() {
                 {formatAadhar(viewing.aadharNumber) || '-'}
                 {viewing.aadharMasked && <span className="muted"> - hidden for your role</span>}
               </dd>
-              <dt>Zone</dt>
-              <dd>{viewing.zoneName}</dd>
+              <dt>{viewing.extraZoneNames?.length ? 'Zones' : 'Zone'}</dt>
+              <dd>{[viewing.zoneName, ...(viewing.extraZoneNames || [])].join(', ')}</dd>
               <dt>Blood Group</dt>
               <dd>{viewing.bloodGroup || '-'}</dd>
               <dt>Area</dt>
@@ -838,14 +1032,16 @@ export default function Sewadars() {
               <dd>{viewing.fatherOrHusbandName || '-'}</dd>
               <dt>Department</dt>
               <dd>{viewing.department || '-'}</dd>
-              <dt>Primary sewa</dt>
-              <dd>{viewing.primarySewaType?.replace(/_/g, ' ') || '-'}</dd>
+              <dt>Status</dt>
+              <dd>{viewing.statusLabel || '-'}</dd>
+              <dt>Grouping</dt>
+              <dd>{viewing.grouping || '-'}</dd>
+              <dt>Locality</dt>
+              <dd>{viewing.localityLabel || '-'}</dd>
+              <dt>Designation</dt>
+              <dd>{viewing.designationName || '-'}</dd>
               <dt>Gender</dt>
               <dd>{viewing.gender ? viewing.gender[0] + viewing.gender.slice(1).toLowerCase() : '-'}</dd>
-              <dt>City</dt>
-              <dd>{viewing.city || '-'}</dd>
-              <dt>Pincode</dt>
-              <dd>{viewing.pincode || '-'}</dd>
               <dt>Joining date</dt>
               <dd>{viewing.joiningDate || '-'}</dd>
             </dl>
@@ -887,6 +1083,87 @@ export default function Sewadars() {
           A sewadar who already has attendance history is deactivated rather than removed, so the
           past records stay intact.
         </p>
+      </Modal>
+
+      {/* ---------- bulk add: download the template, or upload a filled-in one ---------- */}
+      <Modal
+        title="Bulk Add Sewadar"
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        footer={
+          <button type="button" className="btn ghost" onClick={() => setBulkOpen(false)}>
+            Close
+          </button>
+        }
+      >
+        <Alert kind="error">{uploadError}</Alert>
+
+        <p>Adding sewadars in bulk takes two steps.</p>
+        <ol className="bulk-steps">
+          <li>
+            Download the template and fill in one row per sewadar. Red headings must be
+            filled in; the others may be left empty.
+          </li>
+          <li>
+            In Excel choose <strong>File &gt; Save As</strong> and pick{' '}
+            <strong>CSV (Comma delimited)</strong>, then upload that file here.
+          </li>
+        </ol>
+
+        <div className="bulk-actions">
+          <button type="button" className="btn ghost" onClick={downloadTemplate} disabled={bulkBusy}>
+            {bulkBusy && !uploadProblems ? 'Working...' : 'Download Template'}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => filePicker.current?.click()}
+            disabled={bulkBusy}
+          >
+            {bulkBusy ? 'Uploading...' : 'Bulk Upload Sewadar'}
+          </button>
+          <input
+            ref={filePicker}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={onFileChosen}
+            style={{ display: 'none' }}
+          />
+        </div>
+
+        {uploadProblems && (
+          <>
+            <Alert kind="error">
+              {uploadProblems.problems.length === 1
+                ? 'One row needs fixing, so nothing was saved.'
+                : `${uploadProblems.problems.length} things need fixing, so nothing was saved.`}{' '}
+              Correct the rows below in your file, save it as CSV again, and upload it once
+              more.
+            </Alert>
+            <div className="table-wrap">
+              <table className="problem-table">
+                <thead>
+                  <tr>
+                    <th>Row</th>
+                    <th>Column</th>
+                    <th>Value</th>
+                    <th>Problem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploadProblems.problems.map((problem, i) => (
+                    <tr key={`${problem.line}-${problem.column}-${i}`}>
+                      <td>{problem.line}</td>
+                      <td>{problem.column || '-'}</td>
+                      <td className="muted">{problem.value || '-'}</td>
+                      <td>{problem.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   )

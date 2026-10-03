@@ -24,7 +24,7 @@ export default function Requests() {
   const [raising, setRaising] = useState(false)
   const [reviewing, setReviewing] = useState(null)
 
-  const params = useMemo(() => ({ status: status || undefined, page, size: 20 }), [status, page])
+  const params = useMemo(() => ({ status: status || undefined, page, size: 25 }), [status, page])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -259,7 +259,7 @@ function RaiseDialog({ open, onClose, zones, isSewadar, onDone }) {
     } else {
       // A supervisor or incharge picks from the sewadars they can reach.
       sewadarApi
-        .search({ active: true, size: 200, sortBy: 'name', direction: 'asc' })
+        .search({ size: 200, sortBy: 'name', direction: 'asc' })
         .then((res) => setSewadars(res.content || []))
         .catch(() => setSewadars([]))
     }
@@ -400,10 +400,22 @@ function ReviewDialog({ request, onClose, onDone }) {
 
   const onSubmit = async (event) => {
     event.preventDefault()
+
+    // Required whichever way it goes. The server refuses without one too; this
+    // just says so before the round trip instead of after it.
+    if (!remarks.trim()) {
+      setError(
+        decision === 'APPROVED'
+          ? 'Give a reason for approving, so the record says why the sewadar moved.'
+          : 'Give a reason for rejecting, so the requester knows what to do next.',
+      )
+      return
+    }
+
     setBusy(true)
     setError('')
     try {
-      await requestApi.review(request.id, { decision, remarks: remarks || null })
+      await requestApi.review(request.id, { decision, remarks: remarks.trim() })
       onDone(
         decision === 'APPROVED'
           ? `${request.sewadarName} moved to ${request.toZoneName}.`
@@ -464,8 +476,17 @@ function ReviewDialog({ request, onClose, onDone }) {
               <option value="REJECTED">Reject</option>
             </select>
           </Field>
-          <Field label="Remarks">
-            <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          <Field label="Reason" required>
+            <textarea
+              value={remarks}
+              maxLength={500}
+              placeholder={
+                decision === 'APPROVED'
+                  ? 'Why this move is being approved'
+                  : 'Why this request is being turned down'
+              }
+              onChange={(e) => setRemarks(e.target.value)}
+            />
           </Field>
         </form>
       )}

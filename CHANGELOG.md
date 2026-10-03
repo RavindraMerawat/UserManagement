@@ -37,6 +37,18 @@ by someone picking the project up cold, so each entry says what changed **and wh
 | 25 | [Manage Past Attendance](#25-manage-past-attendance) | A missed day entered afterwards, in its own tab, this month only |
 | 26 | [Setup: five columns, sized to what is in them](#26-setup-five-columns-sized-to-what-is-in-them) | Rows 95 px → 49 px; the dialog reads like the table |
 | 27 | [Calendar dates were being taken from UTC](#27-calendar-dates-were-being-taken-from-utc) | Attendance written to the wrong day before 05:30; one date helper |
+| 28 | [Two people, one browser, one session](#28-two-people-one-browser-one-session) | The session is per tab now, so a second sign-in cannot reach the first one's screens |
+| 29 | [Searching and reporting by designation](#29-searching-and-reporting-by-designation) | A Designation filter on the sewadar register and on the Monthly Report |
+| 30 | [An Office User could see Mark Attendance and not use it](#30-an-office-user-could-see-mark-attendance-and-not-use-it) | The URL rule and the designation matrix disagreed; the rule was the stale one |
+| 31 | [Reports filter by locality, Local first](#31-reports-filter-by-locality-local-first) | The local register is the one the office prints, so it is the one the screen offers |
+| 32 | [Attendance was being stamped in UTC](#32-attendance-was-being-stamped-in-utc) | The application keeps India Standard Time now, wherever it runs |
+| 33 | [Each account reads its own register](#33-each-account-reads-its-own-register) | Gender on the account, two rights narrowed, and the register split by locality |
+| 34 | [Messages for the office, and buttons that mean something](#34-messages-for-the-office-and-buttons-that-mean-something) | No port numbers on screen; a button is offered only when it would work |
+| 35 | [Today Hours on the dashboard list](#35-today-hours-on-the-dashboard-list) | The tile's grid shows the day's hours, and only the columns the office reads |
+| 36 | [The register counted four ways](#36-the-register-counted-four-ways) | Local and outstation, men and women, as four cards instead of a table |
+| 37 | [Four to a row, 25 to a page, and an account that knows who it is](#37-four-to-a-row-25-to-a-page-and-an-account-that-knows-who-it-is) | Dashboard row capped, one page size everywhere, GR. No fills the account form |
+| 38 | [A register you cannot read is not a card you should see](#38-a-register-you-cannot-read-is-not-a-card-you-should-see) | The other gender's cards go, and Attendance narrows to Mark for most roles |
+| 39 | [The duplicate that was not a duplicate](#39-the-duplicate-that-was-not-a-duplicate) | A blank email blocked every second account; the photo is pointed at, not copied |
 
 ---
 
@@ -2269,6 +2281,886 @@ Everything below was run against a live server, not inferred.
 
 ---
 
+## 28. Two people, one browser, one session
+
+Reported: *"same browser I have login in admin role and same I have login in another
+login, then all admin features are visible to the other role."*
+
+### What was actually happening
+
+The signed-in session - the JWT and the profile that draws the menu - was kept in
+`localStorage`. **localStorage belongs to the browser, not to the tab.** Every tab of
+every window on that machine reads and writes the same two keys, so the application
+could only ever hold one session at a time, no matter how many tabs were open.
+
+Two things followed from that, and both were reported as one fault:
+
+1. **A second person never got a login screen.** Opening the application in another
+   tab found the first person's token already in storage, fetched their profile with
+   it and drew their menu. Signing in as somebody else was not required and not
+   offered - the Admin screens were simply there.
+2. **When a second sign-in did happen, the tabs came apart.** The newer token
+   overwrote the older one, but the tab already open kept the menu React had rendered
+   from the *previous* profile. The screen said one person and the token said
+   another. On a shared office machine the dangerous direction is obvious: the Admin
+   tab is left open, somebody signs in as a Sewadar in a second tab, and the Admin
+   tab is still sitting there, still reachable.
+
+Reproduced before changing anything, against the deployed build, by driving two tabs
+of one headless browser: tab 1 signed in as Admin, tab 2 opened fresh and was
+**already signed in as Admin**, full menu - Sewadar, User Account, Setup and all.
+
+### The fix
+
+`frontend/src/api/client.js` keeps the session in **`sessionStorage`**, which is
+scoped to the tab. Two people can now work side by side in one browser; neither can
+see or use the other's access, and a tab that has not signed in asks for a login.
+
+| | Before | After |
+|---|---|---|
+| Where the token lives | `localStorage` - the whole browser | `sessionStorage` - this tab |
+| A second tab | inherits the first session | asks who you are |
+| Signing in elsewhere | replaces the open tab's session | leaves it alone |
+| Closing the tab | still signed in | signed out |
+
+Three smaller things went with it:
+
+- **The old shared token is cleared on the way past.** A browser that was carrying
+  one in `localStorage` has it removed when the new build loads, so the shared copy
+  cannot be picked up again. Everyone signs in once more after this deploy; that is
+  the whole migration.
+- **Reads and writes are wrapped**, as in `theme.js`: storage *throws* in a private
+  window or when site data is blocked, and a session that cannot be written should
+  fall back to lasting the visit rather than showing a blank screen.
+- **The photo cache is emptied when the signed-in person changes**
+  (`clearPhotoCache`, called from `login` and `logout` in `AuthContext`). It lives in
+  the page rather than in storage, so signing out and signing in as somebody else in
+  the same tab would otherwise keep serving pictures fetched under the previous
+  session - including people the new account may not see. The blob URLs are revoked,
+  so the bytes go too.
+
+Nothing changed on the server, and nothing needed to: the JWT is stateless and every
+request was always authorised on its own token. This was the browser handing the
+wrong token and the wrong menu to the wrong person.
+
+### Verified
+
+The same script run against the deployed build and against the fixed one, two tabs of
+one browser, a real Admin account and a throwaway Office User that was deleted
+afterwards:
+
+| Step | Deployed build | Fixed build |
+|---|---|---|
+| Tab 1 signs in as Admin | Admin, session in `localStorage` | Admin, session in `sessionStorage` |
+| Tab 2 opened fresh | **already Admin**, full menu, no login asked | nobody signed in, login asked |
+| Tab 2 signs in as Office User | - | Office User; menu has **no User Account, no Setup** |
+| Tab 1, untouched | - | still Admin, still its own token |
+| Tab 1, refreshed | - | still Admin |
+
+And a browser still carrying an old `localStorage` token: cleared on load, sent to
+the login screen, theme preference untouched.
+
+### What this costs
+
+Closing the tab ends that session, where before the browser stayed signed in until
+the token expired. For a shared machine that is the better default, and it is the
+behaviour the report asked for. If "keep me signed in" is wanted later, the honest
+way to build it is an HttpOnly refresh cookie, not a token back in `localStorage`.
+
+---
+
+## 29. Searching and reporting by designation
+
+Asked for: a designation filter on the **Monthly Report**, applied when *Generate
+report* is pressed, and the same filter on the **sewadar search**.
+
+### What it does
+
+| Screen | Where | Behaviour |
+|---|---|---|
+| Sewadar register | beside Zone | the grid narrows as the picker changes, like Search and Zone already do |
+| Reports > Monthly Report | beside Zone | chooses what the next **Generate report** will cover |
+
+The two filters combine with everything else on the row: Zone 1A's supervisors, or
+"asha" among the co-ordinators, are now single questions rather than a report read
+with a finger down the page.
+
+### The server
+
+One parameter, `designationId`, on two queries.
+
+- `GET /api/sewadars` — `SewadarRepository.search` gained
+  `and (:designationId is null or rl.id = :designationId)`.
+- `GET /api/reports/monthly` and its `/excel`, `/pdf`, `/csv` and `/share` endpoints —
+  the same predicate in `AttendanceRepository.monthlySummary`, which already joined
+  the designation to put it in the sheet.
+
+Two decisions worth writing down:
+
+**The join is a left one.** `s.role.id` in JPQL is an inner join, and the register is
+full of people whose designation has never been filled in - the two bulk uploads
+brought in 3,005 rows with the column blank. Written the obvious way, every one of
+them would have disappeared from the sewadar screen the moment this shipped, filter or
+no filter. `DesignationFilterTest.unfilteredSearchKeepsTheUnassigned` fails if the
+join is changed back, which was checked by changing it back.
+
+**An unknown id is refused, not answered.** An id matching no designation used to come
+back as an empty list, which reads as "nobody holds this designation" rather than
+"that is not a designation". Both the search and the report now say so with a 400.
+
+**The designation goes in the title.** `Monthly Attendance Report - October 2026 -
+Co-ordinator`, which is also what the download is named after:
+`Monthly_Attendance_Report_October_2026_Co_ordinator.pdf`. A sheet of co-ordinators
+that says only "Monthly Attendance Report" looks like the whole register with most of
+it missing.
+
+The Sewadar Monthly Hours tab does not get the filter: that report is already about
+one named person, so a designation on it could only agree or return nothing. Nor do
+the roster sewa, construction sewa and custom range reports - they were not asked for,
+and they pass `null` through the same code path.
+
+### The browser
+
+The designation list is loaded for **everyone who can open the Sewadar screen**. It
+used to be fetched only for the roles that can edit a record, because it was only a
+field on the form; as a filter it belongs to anyone who can look at the grid.
+
+### Verified
+
+`DesignationFilterTest`, seven cases: the search by designation, the designation
+narrowing a text search, the unassigned sewadar surviving an unfiltered search, the
+unknown id being refused, and the same three for the report including the title. The
+suite is **150 tests, all passing**.
+
+Then driven in a real browser against a local build, five sewadars - two
+co-ordinators, a supervisor, a zone incharge and one with no designation:
+
+| Step | Result |
+|---|---|
+| Sewadar register, no designation chosen | 5 rows, including the unassigned one |
+| Designation = Co-ordinator | 2 rows, C-001 and C-002 |
+| Designation = Supervisor | 1 row, S-001 |
+| Back to All designations | 5 rows again |
+| Monthly Report, Co-ordinator, Generate report | 2 rows, titled "... - Co-ordinator" |
+| Back to All designations, Generate report | 5 rows |
+| CSV download, all / Co-ordinator | 10 lines / 7 lines, filenames carrying the designation |
+
+---
+
+## 30. An Office User could see Mark Attendance and not use it
+
+Reported: *"office user unable to mark attendance."*
+
+### Two rules, one decision, and they disagreed
+
+Permission is decided twice on the way in. `SecurityConfig` has a coarse rule per
+URL and HTTP method; `Capabilities` has the real matrix, keyed on **designation**,
+which the services check. The coarse rule is meant to keep a role that could never
+hold the grant away from the endpoint - it is not meant to have an opinion of its
+own.
+
+It had one. `Capabilities` grants **every** Office User `markAttendance` - the
+fallback grant for an account with no designation, and the Office Sewadar grant -
+but the URL rule for `/api/attendance/**` listed ADMIN, OFFICE_ADMIN, COORDINATOR,
+ZONE_INCHARGE and SUPERVISOR, and not OFFICE_USER. So the login told the browser
+`canMarkAttendance: true`, the screen drew Check In next to the sewadar, and pressing
+it came back **403 "This action is not available for Office User accounts"**. The
+office could see the button for weeks and never use it.
+
+Reproduced before touching anything, against a build of the current code, with two
+Office User accounts - one carrying the Office Sewadar designation, one with none:
+
+| | the login says | POST /api/attendance/check-in |
+|---|---|---|
+| Office User with a designation | `canMarkAttendance: true` | 403 |
+| Office User without one | `canMarkAttendance: true` | 403 |
+
+### The fix
+
+OFFICE_USER added to the attendance rules in `SecurityConfig`, and - the same fault,
+found while reading - to the sewadar write rules and the attendance delete rule,
+which the Office Sewadar designation also grants through `manageSewadars`. Nothing
+was loosened by it: the services still ask `Capabilities`, so an Office User whose
+designation does not carry the grant is refused exactly as before, by the rule that
+knows what their designation is rather than by the one that does not.
+
+### Verified
+
+`OfficeUserAttendanceTest` runs the whole chain - sign in, bearer token, filter, URL
+rule, controller, service - four cases:
+
+| Who | Marking attendance |
+|---|---|
+| Office User, Office Sewadar designation | **200** |
+| Office User, no designation | **200** |
+| Office User, Guide Sewadar designation | **403** - an ordinary sewadar in the matrix |
+| Sewadar login | **403** - which is what the URL rule is there for |
+
+Put the old rule back and the first two fail, which is how I know the test is worth
+keeping. Then through the screen itself, signed in as an Office User: searched the
+sewadar, pressed Check Out, and the screen replied *"Anita Marked checked out at
+04:19 PM - 0h 08m."* Suite: **154 tests, all passing**.
+
+---
+
+## 31. Reports filter by locality, Local first
+
+Asked for: *"when I download report, Locality is set by default Local - so add one
+more filter and add Local by default, because most of the time local report is
+needed."*
+
+### What it does
+
+A **Locality** picker on the Monthly Report filters, next to Designation, offering
+**Local** (chosen when the screen opens), **Outstation** and **All localities**. Like
+every other filter there it takes effect on **Generate report**, and it goes with the
+report into the PDF, the Excel, the CSV and a share.
+
+The chosen locality is appended to the title, so the sheet says what it holds:
+`Monthly Attendance Report - October 2026 - Local`, downloading as
+`Monthly_Attendance_Report_October_2026_Local.pdf`. With a designation as well, both
+appear: `... - Co-ordinator - Local`.
+
+### The default lives in the screen, not the server
+
+`GET /api/reports/monthly` without a `locality` still covers everybody. Only the
+Reports screen starts on Local, because that is where the preference belongs: an
+older link, a script, or any other caller gets the whole register, which is what they
+have always got. Putting the default in the server would have changed the meaning of
+a request that says nothing about locality.
+
+### A sewadar with no locality recorded
+
+`locality = :locality` excludes a blank, so somebody whose locality was never filled
+in appears under **All localities** and in neither Local nor Outstation. That is the
+honest answer - they have not been recorded as local - and `LocalityReportTest` pins
+it so it stays a decision rather than a surprise. On the live register it is moot
+today: all 3,005 sewadars carry one, 1,513 Local and 1,492 Outstation.
+
+### Verified
+
+`LocalityReportTest`, four cases: Local, Outstation, no locality meaning everyone, and
+the blank not being counted as Local. Suite: **158 tests, all passing**.
+
+Then in the browser against a running build, two local and two outstation sewadars:
+
+| Step | Result |
+|---|---|
+| Reports opens | Locality shows **Local**; the list is Local / Outstation / All localities |
+| Generate report | 2 rows, titled "... - Local" |
+| Outstation, Generate | 2 rows, titled "... - Outstation" |
+| All localities, Generate | 4 rows, no locality in the title |
+| CSV downloads | Local 7 lines, Outstation 7, all 9 - each filename carrying its locality |
+
+---
+
+## 32. Attendance was being stamped in UTC
+
+Reported: *"I have marked attendance but time is wrong - my time zone is always India,
+IST (GMT+5:30), Saturday 3 October 2026, 4:51 pm."*
+
+### Where the five and a half hours went
+
+Attendance is stored as a `LocalDate` and a `LocalTime` - a day and a clock reading
+with no zone attached, because that is what the office writes on the sheet. A
+zone-less time is only as good as the clock that produced it, and `LocalTime.now()`
+reads the **JVM's default zone**, which is the machine's. The production server keeps
+its clock in UTC. So a check in at 4:51 pm was written down as 11:21 and shown that
+way on every screen and in every report afterwards.
+
+Change set 27 fixed the other half of this - the **browser** was computing today's
+date from UTC. The server half was still there, and it is the half that decides what
+is actually written down.
+
+### The fix
+
+The application sets its own default zone to **Asia/Kolkata**, in two places, for
+one reason each:
+
+- `TimeZoneConfig` applies `app.time-zone` (defaulting to Asia/Kolkata) once the
+  context is up. It is a property rather than a constant only so this could run for
+  an office somewhere else; nothing is expected to set it.
+- `main()` applies the same default **before** `SpringApplication.run`, so the
+  startup lines are in the office's time too and a jar run with no configuration at
+  all is still on IST.
+
+Setting it in the application rather than on the server means the rule travels with
+the jar: a laptop in another zone, a container with no `TZ`, a server rebuilt by
+somebody else - all of them stamp IST. Nothing else changed: the fifteen places that
+ask for the time are untouched and now simply get the right answer.
+
+### Verified
+
+`IndiaTimeTest` - the default zone is Asia/Kolkata, a check in lands within a minute
+of the Indian wall clock, and `LocalDate.now()` is India's today. The tolerance is one
+minute on purpose: against UTC it is out by five and a half hours, so a looser test
+would have passed either way.
+
+Run with `-Duser.timezone=UTC`, which is what production looks like:
+
+| | Result |
+|---|---|
+| With the fix | 3 tests pass |
+| With the fix removed | **3 tests fail** |
+
+Suite: **161 tests, all passing**. After deploying, the service's own log lines read
+`2026-10-03T16:59:08.338+05:30` while journald stamps them `11:29:08` UTC beside -
+which is the whole fix in one line.
+
+### The rows already written
+
+Seven attendance rows existed, and they were not all the same. Which ones were wrong
+is readable from the data: a row the server stamped has an `inTime` equal to the
+moment the row was created, while a row typed in on Manage Past Attendance has a
+round hour that has nothing to do with its `createdAt`.
+
+| Rows | What they are | Done |
+|---|---|---|
+| 3 rows on 30 Sep, round hours (13:00, 14:00, 15:00) | typed by hand, so already the office's own time | left exactly as they were |
+| 4 rows where the time equals the moment of creation | stamped by the server in UTC | **moved +5:30** |
+
+| id | was | now |
+|---|---|---|
+| 5 | 1 Oct 11:13:25 | 1 Oct **16:43:25** |
+| 6 | 3 Oct 10:08:44 | 3 Oct **15:38:44** |
+| 7 | 1 Oct 10:37:51 | 1 Oct **16:07:51** |
+| 8 | 3 Oct 11:02:39 - 11:17:39 | 3 Oct **16:32:39 - 16:47:39** |
+
+No date crosses midnight, so only the clock readings moved; the 0.25 hours on the one
+checked-out row is the difference between its two times and is unchanged. The
+`attendance` table was dumped to `/root/pandal-backups/` first.
+
+### MySQL's own clock
+
+Set to **+05:30** as well, with `SET PERSIST`, so it survives a restart without a
+config file being edited by hand. Two notes on why it is written as an offset and why
+it was safe:
+
+- **`+05:30`, not `Asia/Kolkata`** - the named zone tables are not loaded on this
+  server, and India has no daylight saving, so the offset is exact in perpetuity.
+- **Nothing stored moved.** Every date-and-time column in the schema is `datetime`,
+  which MySQL stores as a literal reading and never converts, and no column takes its
+  value from `CURRENT_TIMESTAMP`. Checked before the change and confirmed after:
+  `sewadars` and `photos` timestamps identical, seven attendance rows, no errors in
+  the service log. What changed is what `now()` answers in a query typed by hand:
+  17:02 rather than 11:32.
+
+---
+
+## 33. Each account reads its own register
+
+Four things asked for together, which turned out to be one idea and three rules:
+
+1. **Correcting attendance** is the Admin's and the Office Incharge's.
+2. The **Records** tab is theirs too, and is called **All Attendance Record**.
+3. The **Monthly Report** is for Admin, Office Incharge and Office Sewadar.
+4. Every account **reads its own gender's register** - a male login the men, a
+   female login the women - with the Admin seeing both, and the dashboard showing
+   male and female by locality for everybody.
+
+### Marking is not correcting
+
+`Capabilities` gained two rights that used to travel with others:
+
+| Right | Who has it |
+|---|---|
+| `manageAttendanceRecords` | Admin, Office Incharge (and an Office Admin account, which falls back to that grant) |
+| `viewMonthlyReport` | the same, plus Office Sewadar |
+
+Marking attendance is untouched - everyone who marked yesterday still marks, which
+is the point of splitting the two. `AttendanceService.update` and `.delete` ask the
+new question instead of the old one, so the rule holds for anything that reaches the
+API rather than only for the buttons.
+
+Two screens follow the server: the attendance tab is renamed and only drawn for a
+login that may use it, and the Monthly Report tab is only drawn for the three. Two
+deliberate exceptions, both for the same reason - a sewadar's own data is not the
+office's register:
+
+- a **Sewadar login keeps My Attendance**, which is the same screen reading one row;
+- a **Sewadar login keeps its own monthly report**, and the server allows any
+  self-scoped caller or any request that names one sewadar. What is refused is the
+  register at large.
+
+### Gender on the account
+
+Nothing in the system carried a person's gender for a *login*: the `users` table had
+no such column, and not one account in the office is linked to a sewadar record. So
+the account grew two fields, on create, edit and the list: **GR. No** and **Gender**.
+
+`DataScope` - the record every repository query already takes - gained a third
+field beside the zones and the self-only id, and `CurrentUserService` fills it from
+the account for every role except Admin. Twenty-one queries across four repositories
+gained `and (:scopeGender is null or <the sewadar>.gender = :scopeGender)`, which is
+the only honest place for it: a filter applied in a service would be wrong the moment
+a page of results or a count went through it.
+
+**An account with no gender set sees both, exactly as it did before.** Every account
+in the office was made before this field, so the other choice - show nothing until
+somebody fills it in - would have emptied every screen on the day it shipped. The
+restriction starts working on an account the moment the field is set on it.
+
+### The register by locality
+
+A panel under the tiles: local men and women, outstation men and women, from one
+grouped query. Every role sees it inside its own reach, so a co-ordinator's table
+counts their zones and their gender, and the Admin's counts everybody. A row for
+records with no locality appears only when there are any - it is there so the parts
+add up to the total above.
+
+### Verified
+
+`GenderScopeTest` (6) and `OfficeRightsTest` (3) alongside the existing suite:
+**170 tests, all passing**. Then four accounts driven through the screens against a
+running build, with two men and three women on the register:
+
+| Account | Register | All Attendance Record | Monthly Report | Dashboard |
+|---|---|---|---|---|
+| admin | all five | yes | yes | local 1 m / 2 f, outstation 1 / 1 |
+| Office Incharge, female | the three women | yes | yes | 0 / 2 and 0 / 1 |
+| Office Sewadar, female | the three women | **no** | yes | 0 / 2 and 0 / 1 |
+| Co-ordinator, male | the two men | **no** | **no** | 1 / 0 and 1 / 0 |
+
+### What the office has to do once
+
+The two columns are added by `db/schema.sql` the next time the application starts,
+and no existing row is altered. But **every account still has no gender**, so until
+somebody opens User Account and sets it, each one keeps seeing both registers. That
+is a deliberate choice, not an oversight - it is the only version of this that cannot
+take a working screen away from somebody mid-week.
+
+---
+
+## 34. Messages for the office, and buttons that mean something
+
+Reported together: *"if user is unable to login, that time 'backend service is not
+working' - this type of message is not good. I want user friendly message like
+please wait, some maintenance work is in progress... and if any attendance is not
+marked, that time check out button is not enabled; if marked then enabled - same as
+badge issue... and in past date attendance, mark current date attendance also enable
+or search not restricted."*
+
+### What a failure says
+
+The message for an unreachable service was **"Cannot reach the API on port 8080.
+Start the backend in IntelliJ (run UserManagementApplication) and try again."** That
+is a note from one developer to another, and it was being read by sewadars at a desk.
+
+`errorMessage` in `api/client.js` was rewritten around one rule: the sentence on the
+screen says what happened and what to do, and everything useful for fixing a fault
+goes to the browser console instead, where a developer will look and nobody else has
+to.
+
+| When | What the office reads |
+|---|---|
+| no answer at all, or 502 / 503 / 504 | The service is unavailable at the moment - maintenance may be in progress. Please wait a few minutes and try again. |
+| 500 | Something went wrong at our end. Please try again, and let the office know if it keeps happening. |
+| 401 | Your sign in has ended. Please sign in again. |
+| 403 | You do not have access to that. Ask the office if you think you should. |
+| 404 | We could not find what you asked for. It may have been removed. |
+| a field is wrong | **Mobile No**: A mobile number is 10 digits |
+
+The server's own messages are passed through unchanged, because they were already
+written for the office - *"Anita already checked in at 09:12. Check out instead."*
+What is replaced is everything that was never written for anybody: a gateway status,
+an HTML error page from a proxy, an axios code, an empty body.
+
+A field error now reads as the label above the box rather than as the name of a Java
+field: `mobileNo` becomes **Mobile No**.
+
+### A button is offered only when it would work
+
+Mark Attendance and Badge Detail already did this - one button, never two, and
+Receive stays shut until a badge is issued. **Zone Attendance** did not: both buttons
+were live whenever anything was ticked, and checking out people who had never checked
+in came back as a list of skipped rows, which reads like a mistake the person made.
+
+Now each button counts the ticked rows it would actually mark, and says so:
+
+| Ticked | Check In | Check Out |
+|---|---|---|
+| nobody | off | off |
+| somebody already checked in | off | **(1)** |
+| and somebody not marked at all | **(1)** | **(1)** |
+
+with a line under them saying which it is - *"1 to check in, 1 to check out"*,
+*"Check Out opens once somebody ticked has been checked in"*.
+
+On **Manage Past Attendance** the Check Out Time field waits for a check in, whether
+already recorded or typed in above: a check out with no arrival is not half a day, it
+is a day that never started.
+
+### Past Attendance takes any day up to today
+
+Two limits went, both on request:
+
+- **today** was refused there - it belonged to Mark Attendance, where the clock is
+  the record. But somebody who comes to the desk afterwards should be marked with the
+  times they give, not stamped with the time of the conversation.
+- **earlier months** were refused because a reported month should not gain rows. A
+  day missed in September is still missed in October.
+
+What is left is the rule that cannot be argued with and that the server enforces as
+well: attendance is not recorded for a day that has not happened. The date field has
+no lower limit now, a maximum of today, and opens on yesterday, which is still the
+likely answer on a screen for days that were missed.
+
+### Verified
+
+In a browser against a running build:
+
+- the service stopped, sign in attempted: **"The service is unavailable at the moment
+  - maintenance may be in progress. Please wait a few minutes and try again."**
+- Zone Attendance, one sewadar checked in and two not: nothing ticked - both off; the
+  checked-in one ticked - Check In off, **Check Out (1)**; plus an unmarked one -
+  **Check In (1)**, **Check Out (1)**.
+- Manage Past Attendance: date field with no lower limit and a maximum of today;
+  Check Out Time disabled, hint *"Enter the check in time first"*, and enabled the
+  moment a check in time is typed; **today accepted**, Save enabled, no error.
+
+---
+
+## 35. Today Hours on the dashboard list
+
+Asked for: *"if user clicks on the attendance dashboard - the Present dashboard -
+show in the grid: photo, GR. No, Name, F/H Name, Mobile No, Zone, Area, Today Hours,
+meaning total hours, the login and logout duration."*
+
+### The grid
+
+Eight columns, in that order. **Age**, **Point** and **Blood Group** came off: the
+tile is about a day, and a column nobody reads on this screen is a column in the way
+of one they do.
+
+### Today Hours
+
+Check in to check out, for the day the tile counted, shown as a clock reads it -
+`08:45`, not `8.75`. A sewadar with more than one sewa on the day has them added up,
+which is what "total hours" means. **A dash where there is no check out yet**: the
+hours are the distance between two times, so until the second exists there is no
+number, and a `0` would read as "was here and did nothing".
+
+`SewadarResponse` gained a nullable `hoursOnDate`, filled in only by the dashboard
+list - the one place a day is in question. The service asks for the whole page's
+attendance in **one** query rather than one per row: twenty-five people on a page
+would otherwise be twenty-five round trips for one column.
+
+### Verified
+
+In a browser, with one sewadar checked in at 09:00 and out at 17:45, one still in,
+and one not marked:
+
+| Photo | GR. No | Name | F/H Name | Mobile No | Zone | Area | Today Hours |
+|---|---|---|---|---|---|---|---|
+| AR | P-001 | Asha Rani | Ram Lal | 9400000000 | Zone 1 - North | Indore | **08:45** |
+| BD | P-002 | Bina Devi | Shyam | 9400000001 | Zone 1 - North | Indore | **-** |
+
+Suite: **170 tests, all passing**.
+
+---
+
+## 36. The register counted four ways
+
+Asked for, with the table from change set 33 attached: *"Total Local Sewadar Male,
+Total Outstation Sewadar Male, same Total Local Sewadar Female, Total Outstation
+Sewadar Female, instead of total sewadar male and female - and also remove, as per
+the attached screenshot."*
+
+### Four cards, not two and a table
+
+The two cards reading **Total Sewadar - Male** and **- Female** are now four:
+
+| | |
+|---|---|
+| Total Local Sewadar - Male | Total Outstation Sewadar - Male |
+| Total Local Sewadar - Female | Total Outstation Sewadar - Female |
+
+and the **Register by locality** table underneath is gone - it was saying the same
+four numbers a second time, one row below the cards that now say them.
+
+The office plans around local and outstation separately: who can be called in at
+short notice and who has to travel. "Total men" was a number nobody acted on.
+
+### Each card opens its own people
+
+Tapping one lists exactly who it counted. `/api/sewadars/by-status` gained a
+`locality` parameter next to the `gender` it already had, so the list is the card
+rather than something close to it - the heading says so too: **All Sewadars · Local ·
+Male**.
+
+### The labels had to fit
+
+A tile label was one line with an ellipsis, which was fine for "Total Sewadar - Male"
+and useless here: four cards in a row all read *"Total Outstatio..."* and the only way
+to tell them apart was to hover. The label now wraps to as many as three lines, with
+a minimum of two so a short one does not shrink the row.
+
+### Verified
+
+In a browser, with two local men, one outstation man, one local woman and two
+outstation women:
+
+| Card | Shows | Opens |
+|---|---|---|
+| Total Local Sewadar - Male | **2** | LM-1, LM-2 |
+| Total Outstation Sewadar - Male | **1** | OM-1 |
+| Total Local Sewadar - Female | **1** | LF-1 |
+| Total Outstation Sewadar - Female | **2** | OF-1, OF-2 |
+
+All four labels read in full on screen, and the old table is gone. Suite: **170
+tests, all passing**.
+
+---
+
+## 37. Four to a row, 25 to a page, and an account that knows who it is
+
+Four things asked for in one go.
+
+### Four cards to a row, whatever the role has
+
+The dashboard row was pinned at five, which was the number the Admin saw. Now it is
+four columns and a card never takes more than one, so a role with three fills three
+of them and a role with seven makes four and three. Four is also the width at which
+the longest label still reads.
+
+Pinned rather than auto-fit on purpose: auto-fit with a pixel minimum gave **three**
+across on this layout, because the dashboard is narrower than the window by the width
+of the menu, and that is exactly the kind of arithmetic a fixed count does not have
+to get right.
+
+### 25 records a page, everywhere
+
+Six screens asked for twenty and the dashboard lists asked for twenty-five. All of
+them now ask for 25, and the six controllers that defaulted to 20 default to 25, so a
+caller that says nothing gets the same page as a screen that does.
+
+### The account form starts from the GR. No
+
+An account belongs to somebody already on the register, so the form now opens with
+**GR. No** and fills itself from the record that number names: full name as the
+register holds it, designation, gender, email, mobile, zone, and the link to the
+sewadar record itself.
+
+- It waits for **five characters** before looking anything up - a GR. No is a letter
+  and five digits, and searching on "L0" would ask for half the register.
+- A number that matches nobody fills in **nothing** and says so: *"No sewadar with
+  GR. No Z99999."* Nothing is guessed, and every field stays editable afterwards.
+- The found sewadar is put into the *Link to sewadar record* picker as well. That
+  picker only lists sewadars without a login, and only for a Sewadar account, so
+  without this the field read "Not linked" while the link was in fact being made.
+
+### The accounts grid, in a standard order
+
+**GR. No, Photo, Name, Username, Gender, Designation, Zone, Email, Status, Last sign
+in** - who the account is, then what it may do, then whether it is in use.
+
+A name longer than ten characters and an address longer than twenty are shortened
+with an ellipsis and carry the whole value as a tooltip. One long work address used
+to push every column after it out of line; the full text is never lost, it is a
+hover away.
+
+### Verified
+
+In a browser: the dashboard's seven cards sit **4 and 3**; the accounts grid shows
+the ten columns in that order; typing `L048` looks nothing up, `L04822` fills the
+form - *Aarti Rameshwar Rawal, Co-ordinator, Female,
+aarti.rameshwar.rawal@example.com, 9826899536, Zone 1 - North*, with the link field
+reading the same person - and `Z99999` says no sewadar has it. The server answers 25
+a page where nothing is asked. Suite: **170 tests, all passing**.
+
+---
+
+## 38. A register you cannot read is not a card you should see
+
+Reported: *"I am logged in with a female co-ordinator but this role accesses male
+data also - I don't want female to see male data... and in Attendance only admin,
+office Incharge, office Sewadar; otherwise all other roles only Mark Attendance
+visible, rest not visible."*
+
+### The data was never leaking
+
+The co-ordinator account carries `gender = FEMALE`, and the register is 3,005 women
+and no men, so nothing male was being returned - checked on the live database before
+changing anything. What was on her screen were the **cards**: "Total Local Sewadar -
+Male", "Total Outstation Sewadar - Male", "Present Today - Male", each reading 0.
+
+A card counting men on a screen belonging to somebody who may not see men is wrong
+even when the number is right. It reads like a register that has lost its people
+rather than one she was never meant to have.
+
+So the login now carries the account's **gender** as well as its rights, and each
+gendered card says whose register it counts. A female account is shown the two female
+cards and the female Present card; a male account the male ones; **Admin has no
+gender and keeps all four**. The server still narrows the data underneath - this only
+stops the screen asking for what it would be refused.
+
+### The Attendance module is the office's; marking is everybody's
+
+| Role | Attendance tabs |
+|---|---|
+| Admin, Office Incharge | Mark, Zone, Manage Past, All Attendance Record |
+| Office Sewadar | Mark, Zone, Manage Past |
+| Co-ordinator, Zone Incharge, Supervisor, plain Office User | **Mark Attendance only** |
+
+A new grant, `fullAttendance`, holds that line. Marking is untouched: everyone who
+marked yesterday still marks, which is the whole point of keeping it separate -
+a co-ordinator at the desk marks the person in front of them, and marking a zone
+sheet at once or entering a day that has already gone is office work.
+
+A **Sewadar login keeps My Attendance** - the same screen reading their own single
+row, which is their own data and not the office's register.
+
+### Verified
+
+Three accounts side by side against a running build, with one man and one woman on
+the register:
+
+| | Cards | Attendance tabs | Register |
+|---|---|---|---|
+| Admin | all four, plus both Present cards | Mark, Zone, Past, All Attendance Record | F-001 **and** M-001 |
+| Office Sewadar, female | **female only** | Mark, Zone, Past | F-001 |
+| Co-ordinator, female | **female only** | **Mark Attendance only** | F-001 |
+
+`OfficeRightsTest` pins the module rule, including that the three roles which lose
+the tabs still mark. Suite: **171 tests, all passing**.
+
+---
+
+## 39. The duplicate that was not a duplicate
+
+Reported: *"when I create user account I am facing: This record conflicts with
+existing data (duplicate badge number, zone code or attendance entry) - but I am
+creating GR. No L04678, which is in sewadars and not in user account."*
+
+### It was the email, and the message was pointing the wrong way
+
+Reproduced in one run: the first account saved without an email worked, the second
+failed. `users.emailId` is unique, and **MySQL allows any number of NULLs in a unique
+column but only one empty string**. The account form sends an empty box as `""`, so
+the first account without an address took that value and every account after it
+collided with it. Most of the register has no email, so this was every second
+account.
+
+`UserService.update` had always normalised a blank to null. `create` did not - one
+line apart, and the half that ran first was the one that was wrong.
+
+**The message made it worse.** A clash on any unique key in the schema reported
+*"duplicate badge number, zone code or attendance entry"*, which sent the office
+looking for a duplicate GR. No that was never there. The database says which
+constraint it was; the handler now says it back in the words of the form:
+
+| Constraint | What the office reads |
+|---|---|
+| `uk_user_email` | That email address is already on another account. |
+| `uk_user_username` | That username is already taken. Choose another. |
+| badge number | That GR. No is already on the register. |
+| Aadhaar | That Aadhaar number is already on another sewadar. |
+| attendance | That sewadar already has attendance for this day and sewa type. |
+
+### The row that was already there
+
+The code fix stops new blanks, but one account - `lataramnani` - was already holding
+the empty string, and it would have gone on blocking every blank-email account after
+the deploy. Set to NULL, with the `users` table dumped first. No other row has one.
+
+### The photo is pointed at, not copied
+
+An account with no photo of its own now shows the photo of the sewadar it belongs to.
+`UserResponse` carries the linked sewadar's id and the time its photo changed, and
+the screen reads the picture from the sewadar - **the bytes are not copied**. There is
+one photo of a person, on their record; change it there and the account's changes
+with it. The sewadars behind a page of accounts are fetched in one query, not one per
+row.
+
+### Verified
+
+`AccountCreationTest`, four cases: two accounts with no email both created, a blank
+stored as nothing rather than as an empty string, a real address still unique, and
+the account pointing at its sewadar's photo rather than holding a copy. Put the old
+line back and two of the four fail. Suite: **175 tests, all passing**.
+
+---
+
+## 40. Four small things on the account form, and one page size everywhere
+
+Asked for: *"if we update user account that time is photo is not available in then
+also fatch from sewadar photo and update in user account, and if email is not
+availabe in user account creation that time email as blank, and edit user account
+that time userName field is not availa so add this filed, and pagination for per page
+is 25 for whole project."*
+
+### The photo, on edit as well as on create
+
+Change set 39 made a new account point at its sewadar's photo. Editing an existing
+one did not: the edit dialog showed an empty frame for an account that had no picture
+of its own, even where the sewadar behind it had one. The dialog now falls back the
+same way the grid does - the frame shows the sewadar's photo, and uploading a new one
+is still what sets a photo on the account itself. Nothing is copied in either place.
+
+### A blank email stays blank
+
+Carried into the edit path for the same reason it was fixed on create: an empty box
+is **no email**, not an empty string. An account can be saved, and re-saved, with the
+field left alone.
+
+### The username is editable
+
+It was on the create form and absent from the edit dialog, so a username typed wrong
+on day one could not be corrected without deleting the account and making it again.
+The field is now on both. A rename checks the new name is free first and refuses with
+*"That username is already taken. Choose another."* rather than a constraint error,
+and the rename is written to the log with who did it and what it was before - this is
+the name somebody signs in with.
+
+### The accounts that predate the link
+
+Found on the live register while checking the deploy: the photo fallback resolved for
+nobody. An account is tied to its sewadar by `sewadars.user_id`, which is set when an
+account is made from a GR. No - and every account already on the server was made
+before that existed. One of them carries GR. No L05030 and the matching sewadar was
+sitting there with a photo on it.
+
+The GR. No identifies the person as well as the link does, so it is now the second
+way of finding them: accounts unmatched by the link are matched on the number. Two
+queries for a page, and the second only runs if the first left somebody out. A number
+that is on no sewadar is not an error - that account simply has no photo to show.
+
+### Twenty-five rows, everywhere
+
+Dashboard, Attendance, Sewadars, Reports, Badge Detail and User Accounts were a mix
+of 10, 20 and 50. All of them are 25 now, server-side default included, so a screen
+asking for "a page" gets the same page as every other screen. Badge Detail had no
+pager at all - it showed the first page of each list and stopped - and now has one.
+
+### The filter that was never reaching the query
+
+Found while checking the Badge Detail pages: the three lists - Issued, Received,
+Pending - were one list. The screen sent the badge flags, the controller never had
+them to send, and all three tiles opened the whole register. The two flags now run
+from the screen through to the query.
+
+A first reading blamed operator precedence in the search - and that was wrong, the
+query's parentheses were right. Worth recording because the *verification* was what
+lied: the check was being answered by a backend started before the parameters were
+compiled, which returns every row for a filter it has never heard of, and looks
+exactly like a filter being ignored. A test at the service layer disagreed with the
+HTTP check, and the test was right.
+
+### Verified
+
+`BadgeFilterTest`, six cases: each of the three lists holds only its own, no filter
+is no filter, searching inside an open list stays inside it, and the same for the
+status filter on the accounts grid. Plus the designation filter against a text search
+that matches every badge number. Over HTTP against a freshly built backend: the three
+lists return one row each, two accounts with no email are both created, the account
+points at its sewadar, a rename succeeds, a clash is refused in words, and both grids
+report a page size of 25. `AccountCreationTest` gains the GR. No fallback and the
+GR. No that matches nobody; take the fallback out and the first of them fails. On the
+live register after deploy, the account holding L05030 resolves to sewadar 845 and
+that sewadar's photo loads. Suite: **184 tests, all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.
@@ -2278,8 +3170,11 @@ Everything below was run against a live server, not inferred.
    this ever needs a migration history.
 2. Email and WhatsApp are **unverified against real providers** - no SMTP or Meta
    credentials were available, so only the disabled-channel path was exercised.
-3. The JWT lives in `localStorage`. Fine for an internal tool; move to an HttpOnly
-   refresh cookie if the threat model needs it.
+3. The JWT lives in `sessionStorage` since change set 28 - per tab, so two people
+   can use one browser without sharing a session. It is still readable by scripts on
+   the page: an HttpOnly refresh cookie is the next step if the threat model needs
+   one, and is also what "keep me signed in" would have to be built on, since closing
+   the tab now ends the session.
 4. Aadhaar numbers are stored as typed and protected only by role masking inside the
    application (change set 11). Anyone who can read the table directly - a DBA, a
    backup file, a stolen dump - sees them.
@@ -2292,11 +3187,10 @@ Everything below was run against a live server, not inferred.
 7. Google sign-in, *Forgot password* and *Sign up* are drawn on the login screen
    because the design carries them; none is wired to anything. Accounts and password
    resets are an administrator's job, and each control says so when clicked.
-8. The **current month, past days only** rule on Manage Past Attendance is enforced
-   in the browser. The server still accepts any non-future date on the check-in
-   endpoints, so a direct API call can still write to an earlier month. Today always
-   falls inside the current month, so the same rule could be added to
-   `CheckInOutService` without affecting Mark Attendance or the bulk zone sheet.
+8. ~~The **current month, past days only** rule on Manage Past Attendance is
+   enforced in the browser~~ - **the rule was removed in change set 34** on request.
+   That screen now takes any day up to and including today, which is what the server
+   always allowed, so the two no longer disagree.
 9. Only Admin and Office Admin can set an account photo, including their own, because
    `/api/users/**` is restricted to those two roles. A Coordinator or Sewadar wanting
    their own picture would need a `/api/auth/me/photo` endpoint; My Profile hides the

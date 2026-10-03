@@ -1,6 +1,7 @@
 package com.user.management.controller;
 
 import com.user.management.AppInfo;
+import com.user.management.entity.Locality;
 import com.user.management.entity.SewaType;
 import com.user.management.integration.NotificationService;
 import com.user.management.model.MonthlyReportResponse;
@@ -54,17 +55,21 @@ public class ReportController {
             @Parameter(description = "1 to 12") @RequestParam int month,
             @RequestParam(required = false) Long zoneId,
             @RequestParam(required = false) Long sewadarId,
-            @RequestParam(required = false) SewaType sewaType) {
-        return reportService.monthly(year, month, zoneId, sewadarId, sewaType);
+            @RequestParam(required = false) SewaType sewaType,
+            @Parameter(description = "Only sewadars holding this designation. Omit for every designation.")
+            @RequestParam(required = false) Long designationId,
+            @Parameter(description = "LOCAL or OUTSTATION. Omit for both.")
+            @RequestParam(required = false) Locality locality) {
+        return reportService.monthly(year, month, zoneId, sewadarId, sewaType, designationId, locality);
     }
 
-    @Operation(summary = "Roster sewa report for a month")
+    @Operation(summary = "Daily sewa report for a month")
     @GetMapping("/roster-sewa")
-    public MonthlyReportResponse rosterSewa(@RequestParam int year,
+    public MonthlyReportResponse dailySewa(@RequestParam int year,
                                             @RequestParam int month,
                                             @RequestParam(required = false) Long zoneId,
                                             @RequestParam(required = false) Long sewadarId) {
-        return reportService.rosterSewa(year, month, zoneId, sewadarId);
+        return reportService.dailySewa(year, month, zoneId, sewadarId);
     }
 
     @Operation(summary = "Construction sewa report for a month")
@@ -84,7 +89,7 @@ public class ReportController {
             @RequestParam(required = false) Long zoneId,
             @RequestParam(required = false) Long sewadarId,
             @RequestParam(required = false) SewaType sewaType) {
-        return reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null);
+        return reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null, null, null);
     }
 
     @Operation(summary = "Download a report as an Excel workbook")
@@ -93,8 +98,11 @@ public class ReportController {
                                                @RequestParam int month,
                                                @RequestParam(required = false) Long zoneId,
                                                @RequestParam(required = false) Long sewadarId,
-                                               @RequestParam(required = false) SewaType sewaType) {
-        MonthlyReportResponse report = reportService.monthly(year, month, zoneId, sewadarId, sewaType);
+                                               @RequestParam(required = false) SewaType sewaType,
+                                               @RequestParam(required = false) Long designationId,
+                                               @RequestParam(required = false) Locality locality) {
+        MonthlyReportResponse report = reportService.monthly(
+                year, month, zoneId, sewadarId, sewaType, designationId, locality);
         return download(exporter.toExcel(report), exporter.fileName(report, "xlsx"), XLSX_MIME);
     }
 
@@ -106,8 +114,11 @@ public class ReportController {
                                              @RequestParam int month,
                                              @RequestParam(required = false) Long zoneId,
                                              @RequestParam(required = false) Long sewadarId,
-                                             @RequestParam(required = false) SewaType sewaType) {
-        MonthlyReportResponse report = reportService.monthly(year, month, zoneId, sewadarId, sewaType);
+                                             @RequestParam(required = false) SewaType sewaType,
+                                             @RequestParam(required = false) Long designationId,
+                                               @RequestParam(required = false) Locality locality) {
+        MonthlyReportResponse report = reportService.monthly(
+                year, month, zoneId, sewadarId, sewaType, designationId, locality);
         return download(pdfWriter.write(report, AppInfo.NAME),
                 exporter.fileName(report, "pdf"), MediaType.APPLICATION_PDF_VALUE);
     }
@@ -118,8 +129,11 @@ public class ReportController {
                                              @RequestParam int month,
                                              @RequestParam(required = false) Long zoneId,
                                              @RequestParam(required = false) Long sewadarId,
-                                             @RequestParam(required = false) SewaType sewaType) {
-        MonthlyReportResponse report = reportService.monthly(year, month, zoneId, sewadarId, sewaType);
+                                             @RequestParam(required = false) SewaType sewaType,
+                                             @RequestParam(required = false) Long designationId,
+                                               @RequestParam(required = false) Locality locality) {
+        MonthlyReportResponse report = reportService.monthly(
+                year, month, zoneId, sewadarId, sewaType, designationId, locality);
         return download(exporter.toCsv(report), exporter.fileName(report, "csv"), "text/csv");
     }
 
@@ -131,7 +145,7 @@ public class ReportController {
             @RequestParam(required = false) Long zoneId,
             @RequestParam(required = false) Long sewadarId,
             @RequestParam(required = false) SewaType sewaType) {
-        MonthlyReportResponse report = reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null);
+        MonthlyReportResponse report = reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null, null, null);
         return download(exporter.toExcel(report), exporter.fileName(report, "xlsx"), XLSX_MIME);
     }
 
@@ -143,7 +157,7 @@ public class ReportController {
             @RequestParam(required = false) Long zoneId,
             @RequestParam(required = false) Long sewadarId,
             @RequestParam(required = false) SewaType sewaType) {
-        MonthlyReportResponse report = reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null);
+        MonthlyReportResponse report = reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null, null, null);
         return download(exporter.toCsv(report), exporter.fileName(report, "csv"), "text/csv");
     }
 
@@ -160,8 +174,11 @@ public class ReportController {
                                     @RequestParam(required = false) Long zoneId,
                                     @RequestParam(required = false) Long sewadarId,
                                     @RequestParam(required = false) SewaType sewaType,
+                                    @RequestParam(required = false) Long designationId,
+                                    @RequestParam(required = false) Locality locality,
                                     @Valid @RequestBody ShareReportRequest request) {
-        MonthlyReportResponse report = reportService.monthly(year, month, zoneId, sewadarId, sewaType);
+        MonthlyReportResponse report = reportService.monthly(
+                year, month, zoneId, sewadarId, sewaType, designationId, locality);
         return notificationService.shareReport(report, request);
     }
 
@@ -174,7 +191,7 @@ public class ReportController {
             @RequestParam(required = false) Long sewadarId,
             @RequestParam(required = false) SewaType sewaType,
             @Valid @RequestBody ShareReportRequest request) {
-        MonthlyReportResponse report = reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null);
+        MonthlyReportResponse report = reportService.range(fromDate, toDate, zoneId, sewadarId, sewaType, null, null, null);
         return notificationService.shareReport(report, request);
     }
 

@@ -13,6 +13,8 @@ import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
@@ -32,89 +34,86 @@ import java.util.Map;
 @Component
 public class ReportExporter {
 
-    private static final String[] HEADERS = {
-            "S.No", "Badge No", "Sewadar Name", "Zone", "Department",
-            "Present", "Half Day", "Leave", "Absent",
-            "Roster Sewa", "Construction Sewa", "Total Hours",
-            "Effective Days", "Attendance %"
-    };
+    /** The columns of the hours sheet. The last is named after the month it covers. */
+    private static final String[] HEADERS = { "S. NO.", "GR NO.", "NAME", "ZONE", null };
 
+    /** Wide enough for a full name without anyone having to drag a column out. */
+    private static final int[] COLUMN_WIDTHS = { 2000, 3000, 7200, 5200, 3000 };
+
+    /**
+     * The monthly hours sheet: one table per zone, one after another.
+     *
+     * <p>The same sheet the PDF draws - {@link ZoneHoursSheet} decides the sections,
+     * the order and who is set in bold, so the two downloads agree.</p>
+     */
     public byte[] toExcel(MonthlyReportResponse report) {
+        ZoneHoursSheet plan = ZoneHoursSheet.of(report);
+
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("Attendance");
+            Sheet sheet = workbook.createSheet("Hours");
 
             CellStyle titleStyle = titleStyle(workbook);
+            CellStyle captionStyle = captionStyle(workbook);
             CellStyle headerStyle = headerStyle(workbook);
-            CellStyle bodyStyle = bodyStyle(workbook);
-            CellStyle totalStyle = totalStyle(workbook);
+            CellStyle plainStyle = centredStyle(workbook);
+            CellStyle emphasisStyle = emphasisStyle(workbook);
 
             int r = 0;
 
             Row titleRow = sheet.createRow(r++);
             Cell titleCell = titleRow.createCell(0);
-            titleCell.setCellValue(report.title());
+            titleCell.setCellValue(plan.title());
             titleCell.setCellStyle(titleStyle);
-            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, HEADERS.length - 1));
+            titleRow.setHeightInPoints(24f);
+            sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, HEADERS.length - 1));
 
-            Row metaRow = sheet.createRow(r++);
-            metaRow.createCell(0).setCellValue("Period: " + report.fromDate() + " to " + report.toDate()
-                    + "   |   Zone: " + nullSafe(report.zoneName())
-                    + "   |   Sewa Type: " + nullSafe(report.sewaTypeLabel()));
-            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, HEADERS.length - 1));
+            for (ZoneHoursSheet.Section section : plan.sections()) {
+                r++;   // a blank line between zones
 
-            r++; // spacer
+                Row captionRow = sheet.createRow(r);
+                for (int c = 0; c < HEADERS.length; c++) {
+                    captionRow.createCell(c).setCellStyle(captionStyle);
+                }
+                captionRow.getCell(0).setCellValue(section.caption());
+                captionRow.setHeightInPoints(18f);
+                sheet.addMergedRegion(new CellRangeAddress(r, r, 0, HEADERS.length - 1));
+                r++;
 
-            Row headerRow = sheet.createRow(r++);
-            for (int c = 0; c < HEADERS.length; c++) {
-                Cell cell = headerRow.createCell(c);
-                cell.setCellValue(HEADERS[c]);
-                cell.setCellStyle(headerStyle);
+                Row headerRow = sheet.createRow(r++);
+                for (int c = 0; c < HEADERS.length; c++) {
+                    Cell cell = headerRow.createCell(c);
+                    cell.setCellValue(HEADERS[c] == null ? plan.hoursHeading() : HEADERS[c]);
+                    cell.setCellStyle(headerStyle);
+                }
+
+                for (ZoneHoursSheet.Line line : section.lines()) {
+                    // Every column centred, headings and values alike.
+                    CellStyle style = line.emphasised() ? emphasisStyle : plainStyle;
+
+                    Row dataRow = sheet.createRow(r++);
+                    int c = 0;
+                    writeCell(dataRow, c++, line.serial(), style);
+                    writeCell(dataRow, c++, line.badgeNumber(), style);
+                    writeCell(dataRow, c++, line.name(), style);
+                    writeCell(dataRow, c++, line.zone(), style);
+                    writeCell(dataRow, c, line.hours(), style);
+                }
             }
 
-            int serial = 1;
-            for (MonthlyReportRow row : report.rows()) {
-                Row dataRow = sheet.createRow(r++);
-                int c = 0;
-                writeCell(dataRow, c++, serial++, bodyStyle);
-                writeCell(dataRow, c++, row.badgeNumber(), bodyStyle);
-                writeCell(dataRow, c++, row.sewadarName(), bodyStyle);
-                writeCell(dataRow, c++, row.zoneName(), bodyStyle);
-                writeCell(dataRow, c++, row.department(), bodyStyle);
-                writeCell(dataRow, c++, row.presentDays(), bodyStyle);
-                writeCell(dataRow, c++, row.halfDays(), bodyStyle);
-                writeCell(dataRow, c++, row.leaveDays(), bodyStyle);
-                writeCell(dataRow, c++, row.absentDays(), bodyStyle);
-                writeCell(dataRow, c++, row.rosterSewaDays(), bodyStyle);
-                writeCell(dataRow, c++, row.constructionSewaDays(), bodyStyle);
-                writeCell(dataRow, c++, row.totalHours(), bodyStyle);
-                writeCell(dataRow, c++, row.effectiveDays(), bodyStyle);
-                writeCell(dataRow, c, row.attendancePercent(), bodyStyle);
+            for (int i = 0; i < COLUMN_WIDTHS.length; i++) {
+                sheet.setColumnWidth(i, COLUMN_WIDTHS[i]);
             }
 
-            MonthlyReportResponse.Totals t = report.totals();
-            Row totalRow = sheet.createRow(r);
-            int c = 0;
-            writeCell(totalRow, c++, "", totalStyle);
-            writeCell(totalRow, c++, "", totalStyle);
-            writeCell(totalRow, c++, "TOTAL (" + t.sewadarCount() + " sewadars)", totalStyle);
-            writeCell(totalRow, c++, "", totalStyle);
-            writeCell(totalRow, c++, "", totalStyle);
-            writeCell(totalRow, c++, t.presentDays(), totalStyle);
-            writeCell(totalRow, c++, t.halfDays(), totalStyle);
-            writeCell(totalRow, c++, t.leaveDays(), totalStyle);
-            writeCell(totalRow, c++, t.absentDays(), totalStyle);
-            writeCell(totalRow, c++, t.rosterSewaDays(), totalStyle);
-            writeCell(totalRow, c++, t.constructionSewaDays(), totalStyle);
-            writeCell(totalRow, c++, t.totalHours(), totalStyle);
-            writeCell(totalRow, c++, "", totalStyle);
-            writeCell(totalRow, c, t.averageAttendancePercent(), totalStyle);
-
-            for (int i = 0; i < HEADERS.length; i++) {
-                sheet.autoSizeColumn(i);
-                int width = sheet.getColumnWidth(i);
-                sheet.setColumnWidth(i, Math.min(width + 600, 12000));
-            }
-            sheet.createFreezePane(0, 4);
+            /*
+             * This sheet is printed, not only read on screen. Without this the five
+             * columns are a shade wider than a portrait page and Excel puts the hours
+             * - the one column the sheet exists for - alone on page two.
+             */
+            sheet.setFitToPage(true);
+            sheet.getPrintSetup().setFitWidth((short) 1);
+            sheet.getPrintSetup().setFitHeight((short) 0);   // as many pages tall as it needs
+            sheet.getPrintSetup().setLandscape(false);
+            sheet.setRepeatingRows(org.apache.poi.ss.util.CellRangeAddress.valueOf("1:1"));
 
             workbook.write(out);
             return out.toByteArray();
@@ -142,7 +141,7 @@ public class ReportExporter {
                     .append(row.halfDays()).append(',')
                     .append(row.leaveDays()).append(',')
                     .append(row.absentDays()).append(',')
-                    .append(row.rosterSewaDays()).append(',')
+                    .append(row.dailySewaDays()).append(',')
                     .append(row.constructionSewaDays()).append(',')
                     .append(row.totalHours()).append(',')
                     .append(row.effectiveDays()).append(',')
@@ -203,7 +202,7 @@ public class ReportExporter {
             appendTd(sb, row.halfDays());
             appendTd(sb, row.leaveDays());
             appendTd(sb, row.absentDays());
-            appendTd(sb, row.rosterSewaDays());
+            appendTd(sb, row.dailySewaDays());
             appendTd(sb, row.constructionSewaDays());
             appendTd(sb, row.totalHours());
             appendTd(sb, row.effectiveDays());
@@ -242,7 +241,7 @@ public class ReportExporter {
         sb.append("Half day: ").append(t.halfDays()).append('\n');
         sb.append("Leave: ").append(t.leaveDays()).append('\n');
         sb.append("Absent: ").append(t.absentDays()).append('\n');
-        sb.append("Roster sewa: ").append(t.rosterSewaDays()).append('\n');
+        sb.append("Daily sewa: ").append(t.dailySewaDays()).append('\n');
         sb.append("Construction sewa: ").append(t.constructionSewaDays()).append('\n');
         sb.append("Total hours: ").append(t.totalHours()).append('\n');
         sb.append("Average attendance: ").append(t.averageAttendancePercent()).append("%\n");
@@ -293,11 +292,45 @@ public class ReportExporter {
                 .append("</td>");
     }
 
+    /** The zone's name across the whole table. */
+    private CellStyle captionStyle(Workbook wb) {
+        CellStyle style = wb.createCellStyle();
+        Font font = wb.createFont();
+        font.setBold(true);
+        font.setFontHeightInPoints((short) 12);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        border(style);
+        return style;
+    }
+
+    /** Every cell on this sheet is centred, heading and value alike. */
+    private CellStyle centredStyle(Workbook wb) {
+        CellStyle style = wb.createCellStyle();
+        style.setAlignment(HorizontalAlignment.CENTER);
+        border(style);
+        return style;
+    }
+
+    /** The co-ordinator, the incharges and the supervisors, set in bold. */
+    private CellStyle emphasisStyle(Workbook wb) {
+        CellStyle style = wb.createCellStyle();
+        Font font = wb.createFont();
+        font.setBold(true);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        border(style);
+        return style;
+    }
+
     private CellStyle titleStyle(Workbook wb) {
         CellStyle style = wb.createCellStyle();
         Font font = wb.createFont();
         font.setBold(true);
-        font.setFontHeightInPoints((short) 14);
+        font.setFontHeightInPoints((short) 16);
+        // Grey, so the month names the sheet without competing with the tables.
+        font.setColor(IndexedColors.GREY_50_PERCENT.getIndex());
         style.setFont(font);
         style.setAlignment(HorizontalAlignment.CENTER);
         return style;
@@ -307,27 +340,8 @@ public class ReportExporter {
         CellStyle style = wb.createCellStyle();
         Font font = wb.createFont();
         font.setBold(true);
-        font.setColor(IndexedColors.WHITE.getIndex());
         style.setFont(font);
-        style.setFillForegroundColor(IndexedColors.DARK_YELLOW.getIndex());
-        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-        border(style);
-        return style;
-    }
-
-    private CellStyle bodyStyle(Workbook wb) {
-        CellStyle style = wb.createCellStyle();
-        border(style);
-        return style;
-    }
-
-    private CellStyle totalStyle(Workbook wb) {
-        CellStyle style = wb.createCellStyle();
-        Font font = wb.createFont();
-        font.setBold(true);
-        style.setFont(font);
-        style.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex());
-        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setAlignment(HorizontalAlignment.CENTER);
         border(style);
         return style;
     }

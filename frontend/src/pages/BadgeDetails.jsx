@@ -4,7 +4,7 @@ import { errorMessage } from '../api/client'
 import Alert from '../components/Alert'
 import Spinner from '../components/Spinner'
 import { Avatar } from '../components/Photo'
-import { Badge } from '../components/Bits'
+import { Badge, Pager } from '../components/Bits'
 import { useAuth } from '../auth/AuthContext'
 
 function ageOn(dateOfBirth) {
@@ -29,6 +29,9 @@ export default function BadgeDetails() {
   const [acting, setActing] = useState(false)
   const [gridStatus, setGridStatus] = useState('')
   const [gridRows, setGridRows] = useState([])
+  // The grid is a page of the register now, not two hundred rows filtered in the
+  // browser: the tile counts thousands and the screen shows twenty-five of them.
+  const [gridPage, setGridPage] = useState(null)
 
   const loadSummary = () => sewadarApi.badgeSummary().then(setSummary).catch((err) => setError(errorMessage(err)))
 
@@ -40,7 +43,7 @@ export default function BadgeDetails() {
     event.preventDefault()
     const term = query.trim()
     if (term.length < 2) {
-      setError('Enter at least 2 characters of a badge number or name.')
+      setError('Enter at least 2 characters of a GR. No or name.')
       return
     }
     setLoading(true)
@@ -48,7 +51,7 @@ export default function BadgeDetails() {
     setSelected(null)
     setMatches([])
     try {
-      const result = await sewadarApi.search({ query: term, active: true, size: 20 })
+      const result = await sewadarApi.search({ query: term, size: 20 })
       if (result.content.length === 0) setError(`No badge record found for "${term}".`)
       else if (result.content.length === 1) setSelected(result.content[0])
       else setMatches(result.content)
@@ -66,13 +69,25 @@ export default function BadgeDetails() {
     setError('')
   }
 
-  const openGrid = async (status) => {
+  /*
+   * What each tile means, as the server reads it. "Issued" is a badge handed over
+   * and not yet collected, which is the queue the office works from; "Received" is
+   * collected; "Pending" has not been issued at all.
+   */
+  const BADGE_FILTER = {
+    Issued: { badgeIssued: true, badgeReceived: false },
+    Received: { badgeReceived: true },
+    Pending: { badgeIssued: false },
+  }
+
+  const openGrid = async (status, page = 0) => {
     setLoading(true)
     setError('')
     setGridStatus(status)
     try {
-      const result = await sewadarApi.search({ size: 200 })
-      setGridRows(result.content.filter((person) => status === 'Issued' ? person.badgeIssued : status === 'Received' ? person.badgeReceived : !person.badgeIssued))
+      const result = await sewadarApi.search({ ...BADGE_FILTER[status], page, size: 25 })
+      setGridRows(result.content || [])
+      setGridPage(result)
     } catch (err) {
       setError(errorMessage(err, 'Could not load badge records'))
     } finally {
@@ -87,7 +102,7 @@ export default function BadgeDetails() {
       const updated = action === 'issue' ? await sewadarApi.issueBadge(selected.id) : await sewadarApi.receiveBadge(selected.id)
       setSelected(updated)
       await loadSummary()
-      if (gridStatus) await openGrid(gridStatus)
+      if (gridStatus) await openGrid(gridStatus, gridPage?.page || 0)
     } catch (err) {
       setError(errorMessage(err, `Could not ${action} badge`))
     } finally {
@@ -99,8 +114,10 @@ export default function BadgeDetails() {
     <div className="badge-details">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Badge Detail</h1>
-          <p className="page-sub">Manage sewadar badges and card details, within your zones.</p>
+          <h1 className="page-title">Annual Satsang Sewa</h1>
+          <p className="page-sub">
+            The satsang badge: issued once and kept. Within your zones.
+          </p>
         </div>
       </div>
 
@@ -121,7 +138,7 @@ export default function BadgeDetails() {
         <form className="mark-search" onSubmit={search}>
           <div className="mark-search-field">
             <span className="search-icon">⌕</span>
-            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by Badge No or Name..." aria-label="Search badges" />
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by GR. No or Name..." aria-label="Search badges" />
           </div>
           <button type="submit" className="btn" disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
           <button type="button" className="btn secondary" onClick={reset} disabled={loading}>Reset</button>
@@ -149,7 +166,7 @@ export default function BadgeDetails() {
             <Avatar kind="sewadars" id={selected.id} stamp={selected.photoUpdatedAt} name={selected.name} size={84} />
             <div className="person-facts"><div className="person-name"><h2>{selected.name}</h2><Badge value={selected.badgeReceived ? 'active' : selected.badgeIssued ? 'pending' : 'inactive'} label={selected.badgeReceived ? 'Badge Received' : selected.badgeIssued ? 'Badge Issued' : 'Badge Pending'} /></div>
               <dl className="person-kv">
-                <dt>Badge No</dt><dd>{selected.badgeNumber}</dd><dt>Age</dt><dd>{ageOn(selected.dateOfBirth)}</dd>
+                <dt>GR. No</dt><dd>{selected.badgeNumber}</dd><dt>Age</dt><dd>{ageOn(selected.dateOfBirth)}</dd>
                 <dt>Mobile No</dt><dd>{selected.mobile || '-'}</dd><dt>Zone</dt><dd>{selected.zoneName || '-'}</dd>
                 <dt>Area</dt><dd>{selected.area || '-'}</dd><dt>Point</dt><dd>{selected.centerPoint || '-'}</dd><dt>Badge Issued</dt><dd>{selected.badgeIssued ? 'Yes' : 'No'}</dd>
                 <dt>Badge Received</dt><dd>{selected.badgeReceived ? 'Yes' : 'Pending'}</dd>
@@ -167,9 +184,9 @@ export default function BadgeDetails() {
 
       {gridStatus && (
         <section className="panel">
-          <header className="panel-head"><h2>{gridStatus} Badges</h2><button type="button" className="btn ghost small" onClick={() => { setGridStatus(''); setGridRows([]) }}>Close</button></header>
+          <header className="panel-head"><h2>{gridStatus} Badges</h2><button type="button" className="btn ghost small" onClick={() => { setGridStatus(''); setGridRows([]); setGridPage(null) }}>Close</button></header>
           <div className="table-wrap"><table>
-            <thead><tr><th>Photo</th><th>Badge No</th><th>Name</th><th>Mobile No</th><th>Zone</th><th>Area</th><th>Point</th><th>Status</th></tr></thead>
+            <thead><tr><th>Photo</th><th>GR. No</th><th>Name</th><th>Mobile No</th><th>Zone</th><th>Area</th><th>Point</th><th>Status</th></tr></thead>
             <tbody>{gridRows.length === 0 ? <tr><td colSpan="8" className="empty">No {gridStatus.toLowerCase()} badge records</td></tr> : gridRows.map((person) => (
               <tr key={person.id} onClick={() => setSelected(person)} style={{ cursor: 'pointer' }}>
                 <td><Avatar kind="sewadars" id={person.id} stamp={person.photoUpdatedAt} name={person.name} size={32} /></td><td>{person.badgeNumber}</td><td>{person.name}</td><td>{person.mobile || '-'}</td><td>{person.zoneName || '-'}</td><td>{person.area || '-'}</td><td>{person.centerPoint || '-'}</td>
@@ -177,6 +194,14 @@ export default function BadgeDetails() {
               </tr>
             ))}</tbody>
           </table></div>
+          {gridPage && (
+            <Pager
+              page={gridPage.page}
+              totalPages={gridPage.totalPages}
+              totalElements={gridPage.totalElements}
+              onChange={(next) => openGrid(gridStatus, next)}
+            />
+          )}
         </section>
       )}
     </div>

@@ -43,11 +43,12 @@ public class UserController {
     @GetMapping
     public PageResponse<UserResponse> search(@RequestParam(required = false) String query,
                                              @RequestParam(required = false) Role role,
+                                             @RequestParam(required = false) Long roleId,
                                              @RequestParam(required = false) Boolean enabled,
                                              @RequestParam(defaultValue = "0") int page,
-                                             @RequestParam(defaultValue = "20") int size) {
+                                             @RequestParam(defaultValue = "25") int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 200), Sort.by("username"));
-        return userService.search(query, role, enabled, pageable);
+        return userService.search(query, role, roleId, enabled, pageable);
     }
 
     @Operation(summary = "Get one account")

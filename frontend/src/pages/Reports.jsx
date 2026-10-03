@@ -1,43 +1,73 @@
 import { useCallback, useEffect, useState } from 'react'
-import { metaApi, reportApi, zoneApi } from '../api/endpoints'
+import { metaApi, reportApi, setupApi, sewadarApi, zoneApi } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import Alert from '../components/Alert'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 import { EmptyRow, Field } from '../components/Bits'
-import { fromIso, monthStartIso, todayIso } from '../dates'
-
-const REPORT_KINDS = [
-  { key: 'monthly', label: 'Monthly attendance', loader: reportApi.monthly },
-  { key: 'roster', label: 'Roster sewa', loader: reportApi.rosterSewa },
-  { key: 'construction', label: 'Construction sewa', loader: reportApi.constructionSewa },
-  { key: 'range', label: 'Custom date range', loader: reportApi.range },
-]
+import { fromIso } from '../dates'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
+/**
+ * 8.75 -> 08:45. The month's time as a clock reads it.
+ *
+ * <p>A decimal is how the hours are stored and a poor way to read them: nobody
+ * works "8.75 hours". Minutes are rounded to the nearest whole one, because the
+ * decimal came from times to the second.</p>
+ */
+function hhmm(hours) {
+  const total = Math.round((hours || 0) * 60)
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 const now = new Date()
-const isoToday = () => todayIso()
 
 export default function Reports() {
-  const { isSewadar } = useAuth()
+  const { isSewadar, canViewMonthlyReport } = useAuth()
 
-  const [kind, setKind] = useState('monthly')
+  /*
+   * Two reports over the same month and the same columns: everybody, or one person
+   * looked up by name. The second is the question the office is actually asked -
+   * "how many hours has this sewadar done" - and answering it by generating the
+   * whole register and scrolling was the long way round.
+   */
+  /*
+   * The whole-register report belongs to the office; one sewadar's hours are a
+   * lookup anybody with reach may do. A role without the first opens on the
+   * second rather than on a tab that is not there.
+   */
+  // A Sewadar's monthly report is one row - their own - so it stays with them for
+  // the same reason My Attendance does. The office's register is the gated one.
+  const canOpenMonthly = canViewMonthlyReport || isSewadar
+  const [kind, setKind] = useState(canOpenMonthly ? 'monthly' : 'sewadar')
   const [filters, setFilters] = useState({
     year: now.getFullYear(),
     month: now.getMonth() + 1,
     zoneId: '',
-    sewaType: '',
-    fromDate: monthStartIso(),
-    toDate: isoToday(),
+    designationId: '',
+    /*
+     * Local by default: the local register is what the office prints almost every
+     * time, and defaulting to everyone meant deselecting the outstation sewadars by
+     * hand on each download. "All localities" is still one choice away.
+     */
+    locality: 'LOCAL',
   })
 
+  // The one-sewadar report's own lookup.
+  const [lookup, setLookup] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [hits, setHits] = useState(null)
+  const [sewadar, setSewadar] = useState(null)
+
   const [zones, setZones] = useState([])
-  const [options, setOptions] = useState({ sewaTypes: [] })
+  const [designations, setDesignations] = useState([])
   const [channels, setChannels] = useState({ email: false, whatsapp: false })
 
   const [report, setReport] = useState(null)
@@ -48,33 +78,101 @@ export default function Reports() {
 
   useEffect(() => {
     zoneApi.list(true).then(setZones).catch(() => setZones([]))
-    metaApi.options().then(setOptions).catch(() => {})
+    setupApi
+      .designations({ active: true })
+      .then(setDesignations)
+      .catch(() => setDesignations([]))
     metaApi.channels().then(setChannels).catch(() => {})
   }, [])
 
-  const queryParams = useCallback(() => {
-    const base = {
-      zoneId: filters.zoneId || undefined,
-      sewaType: filters.sewaType || undefined,
+  const queryParams = useCallback(
+    () => ({
+      zoneId: kind === 'sewadar' ? undefined : filters.zoneId || undefined,
+      /*
+       * One sewadar's report is already about one person, so a designation on it
+       * could only ever agree or return nothing. It is a filter for the register,
+       * and goes out with the monthly report only.
+       */
+      designationId: kind === 'sewadar' ? undefined : filters.designationId || undefined,
+      // One sewadar's report is about one person, whose locality is already settled.
+      locality: kind === 'sewadar' ? undefined : filters.locality || undefined,
+      sewadarId: kind === 'sewadar' ? sewadar?.id : undefined,
+      year: Number(filters.year),
+      month: Number(filters.month),
+    }),
+    [filters, kind, sewadar],
+  )
+
+  const resetLookup = () => {
+    setLookup('')
+    setHits(null)
+    setSewadar(null)
+    setReport(null)
+    setError('')
+  }
+
+  const findSewadar = async (event) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    const term = lookup.trim()
+    if (term.length < 2) {
+      setError('Enter at least 2 characters of a GR. No, name, mobile or F/H name.')
+      return
     }
-    if (kind === 'range') {
-      return { ...base, fromDate: filters.fromDate, toDate: filters.toDate }
+    setSearching(true)
+    setSewadar(null)
+    setHits(null)
+    setReport(null)
+    try {
+      const found = await sewadarApi.search({ query: term, size: 10 })
+      const rows = found.content || []
+      if (rows.length === 0) {
+        setError(`No sewadar found for "${term}" in the zones you can reach.`)
+      } else if (rows.length === 1) {
+        setSewadar(rows[0])
+      } else {
+        setHits(rows)
+      }
+    } catch (err) {
+      setError(errorMessage(err, 'Search failed'))
+    } finally {
+      setSearching(false)
     }
-    return { ...base, year: Number(filters.year), month: Number(filters.month) }
-  }, [filters, kind])
+  }
+
+  /*
+   * One sewadar's report runs itself. The search already named who it is about and
+   * the month is already chosen, so there was nothing left for a Generate button to
+   * ask - it only stood between the answer and the person who wanted it.
+   */
+  useEffect(() => {
+    if (kind !== 'sewadar' || !sewadar) return
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    reportApi
+      .monthly({ sewadarId: sewadar.id, year: Number(filters.year), month: Number(filters.month) })
+      .then((result) => {
+        if (!cancelled) setReport(result)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err, 'Could not generate the report'))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [kind, sewadar, filters.year, filters.month])
 
   const generate = async () => {
     setLoading(true)
     setError('')
     setReport(null)
     try {
-      const loader = REPORT_KINDS.find((r) => r.key === kind).loader
-      const params = queryParams()
-      // The dedicated sewa reports already pin the sewa type on the server.
-      if (kind === 'roster' || kind === 'construction') {
-        delete params.sewaType
-      }
-      setReport(await loader(params))
+      setReport(await reportApi.monthly(queryParams()))
     } catch (err) {
       setError(errorMessage(err, 'Could not generate the report'))
     } finally {
@@ -85,16 +183,12 @@ export default function Reports() {
   const download = async (format) => {
     setError('')
     try {
-      // CSV is only wired up for the month based reports on the server.
-      const isRange = kind === 'range'
-      const fileName = await reportApi.download(format, queryParams(), isRange)
+      const fileName = await reportApi.download(format, queryParams())
       setNotice(`Downloaded ${fileName}`)
     } catch (err) {
       setError(errorMessage(err, 'Could not download the report'))
     }
   }
-
-  const showMonthPickers = kind !== 'range'
 
   return (
     <div>
@@ -112,75 +206,108 @@ export default function Reports() {
         {notice}
       </Alert>
 
-      <div className="card">
-        <div className="card-head">
-          <h3>Report options</h3>
-        </div>
+      <div className="tabs">
+        {[
+          canOpenMonthly && { key: 'monthly', label: 'Monthly Report' },
+          { key: 'sewadar', label: 'Sewadar Monthly Hours' },
+        ]
+          .filter(Boolean)
+          .map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={kind === item.key ? 'active' : ''}
+            onClick={() => {
+              setKind(item.key)
+              setReport(null)
+              setError('')
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-        <div className="tabs" style={{ marginBottom: 14 }}>
-          {REPORT_KINDS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={kind === item.key ? 'active' : ''}
-              onClick={() => {
-                setKind(item.key)
-                setReport(null)
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+      <div className="card">
+        {kind === 'sewadar' && (
+          <>
+            {/* A form, so Enter searches without reaching for the button. */}
+            <form className="cs-lookup" onSubmit={findSewadar}>
+              <Field label="GR. No, Name, Mobile No or F/H Name">
+                <input
+                  value={lookup}
+                  onChange={(e) => setLookup(e.target.value)}
+                  placeholder="Type and press Enter, or use Search"
+                />
+              </Field>
+              <button type="submit" className="btn" disabled={searching}>
+                {searching ? 'Searching...' : 'Search'}
+              </button>
+              <button type="button" className="btn ghost" onClick={resetLookup}>
+                Reset
+              </button>
+            </form>
+
+            {hits && (
+              <div className="cs-hits">
+                <p className="hint">{hits.length} sewadars match. Choose the one you mean.</p>
+                {hits.map((hit) => (
+                  <button
+                    type="button"
+                    key={hit.id}
+                    className="cs-hit"
+                    onClick={() => {
+                      setHits(null)
+                      setSewadar(hit)
+                    }}
+                  >
+                    <strong>{hit.name}</strong>
+                    <span className="muted">
+                      {hit.badgeNumber} · {hit.fatherOrHusbandName || 'no F/H name'} ·{' '}
+                      {hit.mobile || 'no mobile'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {sewadar && (
+              <p className="report-chosen">
+                <strong>{sewadar.name}</strong> · {sewadar.badgeNumber} ·{' '}
+                {sewadar.zoneName || 'no zone'}
+              </p>
+            )}
+          </>
+        )}
+
 
         <div className="filters">
-          {showMonthPickers ? (
-            <>
-              <Field label="Month">
-                <select
-                  value={filters.month}
-                  onChange={(e) => setFilters({ ...filters, month: e.target.value })}
-                >
-                  {MONTHS.map((name, index) => (
-                    <option key={name} value={index + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Year">
-                <select
-                  value={filters.year}
-                  onChange={(e) => setFilters({ ...filters, year: e.target.value })}
-                >
-                  {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label="From date">
-                <input
-                  type="date"
-                  value={filters.fromDate}
-                  onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
-                />
-              </Field>
-              <Field label="To date">
-                <input
-                  type="date"
-                  value={filters.toDate}
-                  onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
-                />
-              </Field>
-            </>
-          )}
+          <Field label="Month">
+            <select
+              value={filters.month}
+              onChange={(e) => setFilters({ ...filters, month: e.target.value })}
+            >
+              {MONTHS.map((name, index) => (
+                <option key={name} value={index + 1}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Year">
+            <select
+              value={filters.year}
+              onChange={(e) => setFilters({ ...filters, year: e.target.value })}
+            >
+              {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-          {!isSewadar && (
+          {!isSewadar && kind === 'monthly' && (
             <Field label="Zone">
               <select
                 value={filters.zoneId}
@@ -196,41 +323,62 @@ export default function Reports() {
             </Field>
           )}
 
-          {(kind === 'monthly' || kind === 'range') && (
-            <Field label="Sewa type">
+          {/*
+            Designation narrows the register the same way Zone does, and the two
+            combine: Zone 1A's supervisors is a question the office asks. Choosing
+            one changes nothing on screen until Generate report is pressed, like
+            every other filter here.
+          */}
+          {!isSewadar && kind === 'monthly' && (
+            <Field label="Designation">
               <select
-                value={filters.sewaType}
-                onChange={(e) => setFilters({ ...filters, sewaType: e.target.value })}
+                value={filters.designationId}
+                onChange={(e) => setFilters({ ...filters, designationId: e.target.value })}
               >
-                <option value="">All sewa types</option>
-                {(options.sewaTypes || []).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                <option value="">All designations</option>
+                {designations.map((designation) => (
+                  <option key={designation.id} value={designation.id}>
+                    {designation.name}
                   </option>
                 ))}
               </select>
             </Field>
           )}
+
+          {kind === 'monthly' && (
+            <Field label="Locality">
+              <select
+                value={filters.locality}
+                onChange={(e) => setFilters({ ...filters, locality: e.target.value })}
+              >
+                <option value="LOCAL">Local</option>
+                <option value="OUTSTATION">Outstation</option>
+                <option value="">All localities</option>
+              </select>
+            </Field>
+          )}
+
         </div>
 
         <div className="btn-row" style={{ marginTop: 16 }}>
-          <button type="button" className="btn" onClick={generate} disabled={loading}>
-            {loading ? 'Generating...' : 'Generate report'}
-          </button>
+          {kind === 'monthly' && (
+            <button type="button" className="btn" onClick={generate} disabled={loading}>
+              {loading ? 'Generating...' : 'Generate report'}
+            </button>
+          )}
           {report && (
             <>
               {/*
-                The sheet people actually hand round: S.No, GR. No, Name, Age, Zone
-                and the month's total hours.
+                The sheet people actually hand round: one table per zone, five
+                columns - S. NO., GR NO., NAME, ZONE and the month's hours - with
+                the co-ordinator and the incharges at the top in bold. ZONE is the
+                grouping, and the hours are the rounded ones.
               */}
               <button type="button" className="btn ghost" onClick={() => download('pdf')}>
                 Download PDF
               </button>
               <button type="button" className="btn ghost" onClick={() => download('excel')}>
                 Download Excel
-              </button>
-              <button type="button" className="btn ghost" onClick={() => download('csv')}>
-                Download CSV
               </button>
               <button type="button" className="btn ok" onClick={() => setShareOpen(true)}>
                 Share report
@@ -257,7 +405,6 @@ export default function Reports() {
         onClose={() => setShareOpen(false)}
         report={report}
         params={queryParams()}
-        isRange={kind === 'range'}
         channels={channels}
         onDone={(message) => {
           setNotice(message)
@@ -304,7 +451,6 @@ function ReportView({ report }) {
             are readable at a glance instead of a run-on grey sentence. */}
         <div className="report-chips">
           <span className="report-chip">{report.zoneName || 'All zones'}</span>
-          <span className="report-chip">{report.sewaTypeLabel || 'All sewa types'}</span>
           <span className="report-chip strong">
             {t.sewadarCount} sewadar{t.sewadarCount === 1 ? '' : 's'}
           </span>
@@ -315,25 +461,21 @@ function ReportView({ report }) {
         <table className="table-md report-table">
           <thead>
             <tr>
-              <th className="col-num">#</th>
-              <th>Badge</th>
+              <th className="col-num">S.No</th>
+              <th>GR. No</th>
               <th>Sewadar</th>
+              <th>Area</th>
               <th>Zone</th>
+              <th>Satsang Point</th>
               <th>Department</th>
               <th className="num">Present</th>
-              <th className="num">Half day</th>
-              <th className="num">Leave</th>
-              <th className="num">Absent</th>
-              <th className="num">Roster</th>
-              <th className="num">Construction</th>
               <th className="num">Hours</th>
-              <th className="num">Effective</th>
-              <th className="num">Attendance</th>
+              <th className="num">Effective Hours</th>
             </tr>
           </thead>
           <tbody>
             {report.rows.length === 0 ? (
-              <EmptyRow colSpan={14}>No attendance was marked in this period</EmptyRow>
+              <EmptyRow colSpan={10}>No attendance was marked in this period</EmptyRow>
             ) : (
               report.rows.map((row, index) => (
                 <tr key={row.sewadarId}>
@@ -342,18 +484,14 @@ function ReportView({ report }) {
                   <td className="cell-wrap">
                     <strong>{row.sewadarName}</strong>
                   </td>
+                  <td>{row.area || '-'}</td>
                   <td>{row.zoneName}</td>
+                  <td>{row.satsangPoint || '-'}</td>
                   <td className="muted">{row.department || '-'}</td>
                   <td className="num">{row.presentDays}</td>
-                  <td className="num">{row.halfDays}</td>
-                  <td className="num">{row.leaveDays}</td>
-                  <td className="num">{row.absentDays}</td>
-                  <td className="num">{row.rosterSewaDays}</td>
-                  <td className="num">{row.constructionSewaDays}</td>
-                  <td className="num">{row.totalHours}</td>
-                  <td className="num">{row.effectiveDays}</td>
+                  <td className="num">{hhmm(row.totalHours)}</td>
                   <td className="num">
-                    <strong>{row.attendancePercent}%</strong>
+                    <strong>{row.effectiveHours}</strong>
                   </td>
                 </tr>
               ))
@@ -362,16 +500,10 @@ function ReportView({ report }) {
           {report.rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={5}>Total ({t.sewadarCount} sewadars)</td>
+                <td colSpan={7}>Total ({t.sewadarCount} sewadars)</td>
                 <td className="num">{t.presentDays}</td>
-                <td className="num">{t.halfDays}</td>
-                <td className="num">{t.leaveDays}</td>
-                <td className="num">{t.absentDays}</td>
-                <td className="num">{t.rosterSewaDays}</td>
-                <td className="num">{t.constructionSewaDays}</td>
-                <td className="num">{t.totalHours}</td>
-                <td className="num">-</td>
-                <td className="num">{t.averageAttendancePercent}%</td>
+                <td className="num">{hhmm(t.totalHours)}</td>
+                <td className="num">{t.effectiveHours}</td>
               </tr>
             </tfoot>
           )}
@@ -381,7 +513,7 @@ function ReportView({ report }) {
   )
 }
 
-function ShareDialog({ open, onClose, report, params, isRange, channels, onDone, onError }) {
+function ShareDialog({ open, onClose, report, params, channels, onDone, onError }) {
   const [form, setForm] = useState({
     emailTo: '',
     whatsappTo: '',
@@ -411,9 +543,7 @@ function ShareDialog({ open, onClose, report, params, isRange, channels, onDone,
         note: form.note || null,
         attachExcel: form.attachExcel,
       }
-      const result = isRange
-        ? await reportApi.shareRange(params, payload)
-        : await reportApi.share(params, payload)
+      const result = await reportApi.share(params, payload)
       // A recipient list comes back for a channel that was accepted; the *Sent flag
       // says whether it actually left the server (a disabled channel only logs).
       const parts = []

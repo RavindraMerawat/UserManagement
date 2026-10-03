@@ -1,6 +1,7 @@
 package com.user.management.service;
 
 import com.user.management.entity.Role;
+import com.user.management.entity.SewadarRole;
 import com.user.management.entity.Sewadar;
 import com.user.management.entity.User;
 import com.user.management.entity.Photo;
@@ -19,6 +20,7 @@ import com.user.management.repository.UserRepository;
 import com.user.management.repository.ZoneRepository;
 import com.user.management.security.CurrentUserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,7 +29,11 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -35,6 +41,7 @@ import java.util.Set;
  */
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
@@ -43,11 +50,66 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final PhotoService photoService;
     private final CurrentUserService currentUser;
+    private final com.user.management.repository.SewadarRoleRepository sewadarRoleRepository;
 
     @Transactional(readOnly = true)
-    public PageResponse<UserResponse> search(String query, Role role, Boolean enabled, Pageable pageable) {
+    public PageResponse<UserResponse> search(String query, Role role, Long roleId, Boolean enabled,
+                                             Pageable pageable) {
         String q = StringUtils.hasText(query) ? query.toLowerCase() : null;
-        return PageResponse.of(userRepository.search(q, role, enabled, pageable), UserResponse::from);
+        Page<User> page = userRepository.search(q, role, roleId, enabled, pageable);
+
+        // The sewadar behind each account, for the photo it points at.
+        Map<Long, Sewadar> linked = linkedSewadars(page.getContent());
+        return PageResponse.of(page, user -> UserResponse.from(user, linked.get(user.getId())));
+    }
+
+    /**
+     * Account id to the sewadar record that belongs to it, for a page of accounts.
+     *
+     * <p>Two ways of finding the same person, in order. The link proper is
+     * {@code sewadars.user_id}, set when an account is made from a GR. No. The
+     * accounts that predate that link have no back-pointer, so an account still
+     * holding the GR. No the office typed is matched on the number instead - which
+     * is what the office means by the link in the first place.</p>
+     *
+     * <p>Two queries for a page rather than one per row, and the second only runs
+     * if the first left somebody unmatched.</p>
+     */
+    private Map<Long, Sewadar> linkedSewadars(List<User> users) {
+        if (users.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = users.stream().map(User::getId).toList();
+        Map<Long, Sewadar> byUser = new HashMap<>();
+        for (Sewadar sewadar : sewadarRepository.findByUserIdIn(ids)) {
+            if (sewadar.getUser() != null) {
+                byUser.put(sewadar.getUser().getId(), sewadar);
+            }
+        }
+
+        List<String> unlinkedBadges = users.stream()
+                .filter(user -> !byUser.containsKey(user.getId()))
+                .map(User::getBadgeNo)
+                .filter(StringUtils::hasText)
+                .toList();
+        if (unlinkedBadges.isEmpty()) {
+            return byUser;
+        }
+
+        Map<String, Sewadar> byBadge = new HashMap<>();
+        for (Sewadar sewadar : sewadarRepository.findByBadgeNumberIgnoreCaseIn(unlinkedBadges)) {
+            byBadge.put(sewadar.getBadgeNumber().toLowerCase(), sewadar);
+        }
+        for (User user : users) {
+            if (byUser.containsKey(user.getId()) || !StringUtils.hasText(user.getBadgeNo())) {
+                continue;
+            }
+            Sewadar found = byBadge.get(user.getBadgeNo().trim().toLowerCase());
+            if (found != null) {
+                byUser.put(user.getId(), found);
+            }
+        }
+        return byUser;
     }
 
     /** The numbers on the tab strip. */
@@ -61,7 +123,10 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserResponse get(Long id) {
-        return UserResponse.from(getEntity(id));
+        User user = getEntity(id);
+        // The edit dialog shows the sewadar's photo where the account has none of
+        // its own, so one account needs the same link a page of them gets.
+        return UserResponse.from(user, linkedSewadars(List.of(user)).get(user.getId()));
     }
 
     @Transactional(readOnly = true)
@@ -74,24 +139,47 @@ public class UserService {
         if (userRepository.existsByUsernameIgnoreCase(request.username())) {
             throw new BadRequestException("Username " + request.username() + " is already taken");
         }
-        validateRoleWiring(request.role(), request.zoneIds(), request.sewadarId());
-        requireCanAssignRole(request.role());
+        // The form sends a role from the roles table; the coarse account type is
+        // worked out from it unless one was sent explicitly.
+        SewadarRole chosen = roleOf(request.roleId());
+        Role accountType = request.role() != null ? request.role() : accountTypeFor(chosen);
+
+        validateRoleWiring(accountType, request.zoneIds(), request.sewadarId());
+        requireCanAssignRole(accountType);
         requireEmailIsFree(request.email(), null);
 
         User user = User.builder()
                 .username(request.username().trim().toLowerCase())
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .fullName(request.fullName().trim())
-                .email(request.email())
-                .mobile(request.mobile())
-                .role(request.role())
-                .zones(resolveZones(request.role(), request.zoneIds()))
+                /*
+                 * An empty box is "no email", not an email that happens to be empty.
+                 * emailId is unique, and MySQL allows any number of NULLs but only
+                 * one empty string - so the first account saved without an address
+                 * took '' and every one after it collided with it. The report was
+                 * "duplicate badge number" on a GR. No that was not duplicated at
+                 * all. Update already normalised this; create did not.
+                 */
+                .email(trimToNull(request.email()))
+                .mobile(trimToNull(request.mobile()))
+                .role(accountType)
+                .sewadarRole(chosen)
+                .badgeNo(trimToNull(request.badgeNumber()))
+                .gender(request.gender())
+                .zones(resolveZones(accountType, request.zoneIds()))
                 .enabled(true)
                 .mustChangePassword(Boolean.TRUE.equals(request.mustChangePassword()))
                 .build();
         User saved = userRepository.save(user);
 
-        if (request.role() == Role.SEWADAR) {
+        /*
+         * The link is made for whatever the account type is, not for SEWADAR alone.
+         * A co-ordinator's zones are recorded on their sewadar record - their own and
+         * the others they cover - and that reach only reaches the login through this
+         * link. Narrowing a login to a single record is still a SEWADAR-only rule;
+         * that is decided in AppUserDetailsService, not here.
+         */
+        if (request.sewadarId() != null) {
             Sewadar sewadar = sewadarRepository.findById(request.sewadarId())
                     .orElseThrow(() -> NotFoundException.of("Sewadar", request.sewadarId()));
             if (sewadar.getUser() != null) {
@@ -108,10 +196,28 @@ public class UserService {
     public UserResponse update(Long id, UpdateUserRequest request) {
         User user = getEntity(id);
         requireCanAdministrate(user);
-        if (request.role() != null) {
-            requireCanAssignRole(request.role());
+        SewadarRole chosen = roleOf(request.roleId());
+        Role accountType = request.role() != null
+                ? request.role()
+                : (chosen != null ? accountTypeFor(chosen) : null);
+
+        if (accountType != null) {
+            requireCanAssignRole(accountType);
+        }
+        if (chosen != null) {
+            user.setSewadarRole(chosen);
         }
 
+        if (StringUtils.hasText(request.username())) {
+            String wanted = request.username().trim().toLowerCase();
+            if (!wanted.equals(user.getUsername())) {
+                userRepository.findByUsernameIgnoreCase(wanted).ifPresent(other -> {
+                    throw new BadRequestException("That username is already taken. Choose another.");
+                });
+                log.info("{} renamed account {} to {}", currentUser.username(), user.getUsername(), wanted);
+                user.setUsername(wanted);
+            }
+        }
         if (StringUtils.hasText(request.fullName())) {
             user.setFullName(request.fullName().trim());
         }
@@ -122,16 +228,27 @@ public class UserService {
         if (request.mobile() != null) {
             user.setMobile(request.mobile());
         }
-        if (request.role() != null && request.role() != user.getRole()) {
-            if (request.role() == Role.SEWADAR) {
+        if (request.badgeNumber() != null) {
+            user.setBadgeNo(trimToNull(request.badgeNumber()));
+        }
+        /*
+         * The gender decides which register this account reads, so clearing it is a
+         * real choice - "this account sees both again" - and is kept distinct from
+         * leaving the field out of the request, which changes nothing.
+         */
+        if (request.gender() != null) {
+            user.setGender(request.gender());
+        }
+        if (accountType != null && accountType != user.getRole()) {
+            if (accountType == Role.SEWADAR) {
                 throw new BadRequestException(
                         "Switch an account to the Sewadar role by creating a login from the sewadar record");
             }
             if (user.getRole() == Role.ADMIN && countOtherEnabledAdmins(user) == 0) {
                 throw new BadRequestException("At least one enabled Admin account must remain");
             }
-            user.setRole(request.role());
-            user.setZones(resolveZones(request.role(), request.zoneIds()));
+            user.setRole(accountType);
+            user.setZones(resolveZones(accountType, request.zoneIds()));
         } else if (request.zoneIds() != null) {
             user.setZones(resolveZones(user.getRole(), request.zoneIds()));
         }
@@ -203,6 +320,20 @@ public class UserService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** The account type implied by the chosen designation. */
+    private Role accountTypeFor(SewadarRole role) {
+        return role == null ? Role.SEWADAR : Role.forDesignation(role.getName());
+    }
+
+    /** Null clears it; an unknown id is a bad request rather than a silent null. */
+    private SewadarRole roleOf(Long id) {
+        if (id == null) {
+            return null;
+        }
+        return sewadarRoleRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("Role", id));
     }
 
     /** Refuses an Office Admin acting on an existing ADMIN account. */

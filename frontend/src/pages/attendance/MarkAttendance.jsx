@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { attendanceApi } from '../../api/endpoints'
 import { errorMessage } from '../../api/client'
 import Alert from '../../components/Alert'
@@ -48,7 +48,7 @@ function maskAadhar(value) {
   return `XXXX XXXX ${d.slice(8)}`
 }
 
-export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNotice, onError }) {
+export default function MarkAttendance({ sewaType, onNotice, onError }) {
   const [now, setNow] = useState(clock)
   const [query, setQuery] = useState('')
 
@@ -60,6 +60,7 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
   const [acting, setActing] = useState(false)
   const [localError, setLocalError] = useState('')
   const [revealAadhar, setRevealAadhar] = useState(false)
+  const searchBox = useRef(null)
 
   // Live clock in the header, like the reference screen.
   useEffect(() => {
@@ -107,7 +108,7 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
     setLocalError('')
     const term = query.trim()
     if (term.length < 2) {
-      setLocalError('Enter at least 2 characters of a badge number, name, mobile or Aadhaar.')
+      setLocalError('Enter at least 2 characters of a GR. No, name, mobile or Aadhaar.')
       return
     }
     setSearching(true)
@@ -135,27 +136,30 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
     setSelected(null)
     setLog([])
     setLocalError('')
+    // The next thing anyone does here is look up another sewadar, so the cursor
+    // goes back to the search box rather than being put there by hand.
+    searchBox.current?.focus()
   }
 
-  // Re-reads the sewadar's status so the buttons and cards reflect the new state.
-  const refresh = async (sewadarId) => {
-    const fresh = await attendanceApi.status(sewadarId, sewaType)
-    setSelected(fresh)
-    await loadLog(sewadarId)
-  }
-
+  /*
+   * Marking someone finishes that person, so the screen goes back to an empty
+   * search rather than holding them on it. There is a queue in front of this desk:
+   * leaving the last sewadar on screen made the next person's check-in look like a
+   * second action on the one before, and left a Check Out button in view for
+   * someone who had only just arrived.
+   */
   const act = async (which) => {
     setActing(true)
     setLocalError('')
     try {
       const call = which === 'in' ? attendanceApi.checkIn : attendanceApi.checkOut
       const saved = await call({ sewadarId: selected.sewadarId, sewaType })
-      await refresh(selected.sewadarId)
       onNotice(
         which === 'in'
           ? `${saved.sewadarName} checked in at ${pretty(saved.inTime)}.`
           : `${saved.sewadarName} checked out at ${pretty(saved.outTime)} — ${hoursLabel(saved.hours)}.`,
       )
+      clear()
     } catch (err) {
       setLocalError(errorMessage(err, `Could not check ${which === 'in' ? 'in' : 'out'}`))
     } finally {
@@ -192,7 +196,7 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
         <div>
           <h1 className="mark-title">Mark Attendance</h1>
           <p className="mark-sub">
-            Search a sewadar by Badge No, Name, Mobile Number or Aadhaar Card to check in or
+            Search a sewadar by GR. No, Name, Mobile Number or Aadhaar Card to check in or
             check out.
           </p>
         </div>
@@ -212,9 +216,10 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
             <span className="search-icon">⌕</span>
             <input
               autoFocus
+              ref={searchBox}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by Badge No, Name, Mobile No or Aadhaar Card..."
+              placeholder="Search by GR. No, Name, Mobile No or Aadhaar Card..."
               aria-label="Search sewadar"
             />
             {query && (
@@ -231,25 +236,6 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
           </button>
         </form>
 
-        {/*
-          Which sewa is being marked. It was fixed at Roster Sewa and invisible,
-          while the zone sheet let you pick any of the four - so the two screens
-          could be looking at different records for the same person and day.
-        */}
-        <div className="mark-sewa">
-          <label htmlFor="mark-sewa-type">Sewa type</label>
-          <select
-            id="mark-sewa-type"
-            value={sewaType}
-            onChange={(e) => setSewaType(e.target.value)}
-          >
-            {sewaTypes.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
         <p className="mark-example">
           Example: B00123 or Amit or 9876543210 or 1234 5678 9012 · marking for today; a day
           that was missed goes in under <strong>Manage Past Attendance</strong>.
@@ -318,7 +304,7 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
                   />
                 </div>
                 <dl className="person-kv">
-                  <dt>Badge No</dt>
+                  <dt>GR. No</dt>
                   <dd>{selected.badgeNumber}</dd>
                   <dt>F/H Name</dt>
                   <dd>{selected.fatherOrHusbandName || '-'}</dd>
@@ -380,34 +366,58 @@ export default function MarkAttendance({ sewaTypes, sewaType, setSewaType, onNot
                 </span>
               </div>
 
-              <div
-                className={`state ${selected.checkedOut ? 'ok' : 'bad'}`}
-                title={checkedOutDetail}
-              >
-                <span className="state-icon">{selected.checkedOut ? '✓' : '🕐'}</span>
-                <span className="state-text">
-                  {selected.checkedOut ? 'Checked Out' : 'Not Yet Checked Out'}
-                </span>
-              </div>
+              {/*
+                Only once they are in. Before that, a red "Not Yet Checked Out" is
+                true but says nothing: nobody checks out before checking in, and it
+                read as a second thing needing attention.
+              */}
+              {selected.checkedIn && (
+                <div
+                  className={`state ${selected.checkedOut ? 'ok' : 'bad'}`}
+                  title={checkedOutDetail}
+                >
+                  <span className="state-icon">{selected.checkedOut ? '✓' : '🕐'}</span>
+                  <span className="state-text">
+                    {selected.checkedOut ? 'Checked Out' : 'Not Yet Checked Out'}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="act-grid">
-              <button
-                type="button"
-                className="btn ok"
-                disabled={acting || selected.checkedIn || !selected.active}
-                onClick={() => act('in')}
-              >
-                ✓ Check In
-              </button>
-              <button
-                type="button"
-                className="btn danger"
-                disabled={acting || !selected.checkedIn || selected.checkedOut}
-                onClick={() => act('out')}
-              >
-                ⇥ Check Out
-              </button>
+            {/*
+              One button, never two. A sewadar who has not arrived can only check in
+              and one who has can only check out, so offering both and greying out
+              the wrong one asked the person at the desk to work out which applied.
+              Once the day is marked there is nothing left to press at all.
+            */}
+            <div className="act-single">
+              {!selected.checkedIn && (
+                <button
+                  type="button"
+                  className="btn ok"
+                  disabled={acting || !selected.active}
+                  onClick={() => act('in')}
+                >
+                  {acting ? 'Checking in...' : '✓ Check In'}
+                </button>
+              )}
+              {selected.checkedIn && !selected.checkedOut && (
+                <button
+                  type="button"
+                  className="btn danger"
+                  disabled={acting}
+                  onClick={() => act('out')}
+                >
+                  {acting ? 'Checking out...' : '⇥ Check Out'}
+                </button>
+              )}
+              {selected.checkedIn && selected.checkedOut && (
+                <p className="act-done">
+                  Marked for today — in at {pretty(selected.inTime)}, out at{' '}
+                  {pretty(selected.outTime)}
+                  {selected.hours != null ? ` · ${hoursLabel(selected.hours)}` : ''}.
+                </p>
+              )}
             </div>
             {!selected.active && (
               <Alert kind="warn">

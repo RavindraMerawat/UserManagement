@@ -34,12 +34,31 @@ public class MetaController {
     private final NotificationService notificationService;
     private final EmailService emailService;
     private final WhatsAppService whatsAppService;
+    private final com.user.management.repository.SewadarRoleRepository sewadarRoleRepository;
 
     @Operation(summary = "All dropdown values in one call")
     @GetMapping("/options")
     public Map<String, List<OptionResponse>> options() {
         return Map.of(
-                "roles", Arrays.stream(Role.values())
+                /*
+                 * Roles come from the roles table, not the enum - so the account
+                 * form offers every designation the office has set up rather than
+                 * the seven the code happens to know about. The value is the id.
+                 */
+                "roles", sewadarRoleRepository.findByActiveTrueOrderByNameAsc().stream()
+                        .map(r -> new OptionResponse(String.valueOf(r.getId()), r.getName()))
+                        .toList(),
+                /*
+                 * The account type each of those designations implies, keyed by the
+                 * same id. The account form reads it to decide whether to ask for
+                 * zones - the answer comes from the server so there is one copy of
+                 * the mapping rather than one on each side that can drift.
+                 */
+                "roleAccountTypes", sewadarRoleRepository.findByActiveTrueOrderByNameAsc().stream()
+                        .map(r -> new OptionResponse(String.valueOf(r.getId()),
+                                Role.forDesignation(r.getName()).name()))
+                        .toList(),
+                "accountTypes", Arrays.stream(Role.values())
                         .map(r -> new OptionResponse(r.name(), r.getDisplayName())).toList(),
                 "sewaTypes", Arrays.stream(SewaType.values())
                         .map(s -> new OptionResponse(s.name(), s.getDisplayName())).toList(),

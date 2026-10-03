@@ -63,17 +63,55 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/zones/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/zones/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/zones/**").hasRole("ADMIN")
-                        // Sewadar master data changes.
-                        .requestMatchers(HttpMethod.POST, "/api/sewadars").hasAnyRole("ADMIN", "OFFICE_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/sewadars/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/sewadars/**").hasAnyRole("ADMIN", "OFFICE_ADMIN")
-                        // Marking and editing attendance.
+                        /*
+                         * Sewadar master data changes. OFFICE_USER is on the list
+                         * because the Office Sewadar designation grants
+                         * manageSewadars; SewadarService then checks that grant, so
+                         * an Office User without it is still refused - by the rule
+                         * that knows their designation rather than by this one,
+                         * which does not.
+                         */
+                        .requestMatchers(HttpMethod.POST, "/api/sewadars")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        .requestMatchers(HttpMethod.PUT, "/api/sewadars/**")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/sewadars/**")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        // Construction sewa: everyone signed in may read it, and the
+                        // service narrows that to their zones. Writing is office work;
+                        // the designation rule in Capabilities is the finer check
+                        // behind this one.
+                        .requestMatchers(HttpMethod.POST, "/api/construction-sewa/**")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/construction-sewa/**")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        // Weekly seating sewa is badge work; the designation rule in
+                        // Capabilities is the finer check behind this one.
+                        .requestMatchers(HttpMethod.POST, "/api/weekly-seating/**")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/weekly-seating/**")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
+                        /*
+                         * Marking and editing attendance.
+                         *
+                         * OFFICE_USER was missing here while Capabilities granted
+                         * every Office User markAttendance. The login told the
+                         * screen it could mark, the screen offered Check in, and
+                         * this line turned it into a 403 - the office could see the
+                         * button and never use it. The designation matrix is the
+                         * rule; this list only keeps a role that could never hold
+                         * the grant from reaching the endpoint at all.
+                         */
                         .requestMatchers(HttpMethod.POST, "/api/attendance/**")
-                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "COORDINATOR", "ZONE_INCHARGE", "SUPERVISOR")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER",
+                                "COORDINATOR", "ZONE_INCHARGE", "SUPERVISOR")
                         .requestMatchers(HttpMethod.PUT, "/api/attendance/**")
-                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "COORDINATOR", "ZONE_INCHARGE", "SUPERVISOR")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER",
+                                "COORDINATOR", "ZONE_INCHARGE", "SUPERVISOR")
+                        // Deleting an entry is the manageSewadars grant, which
+                        // AttendanceService.delete checks for the same reason.
                         .requestMatchers(HttpMethod.DELETE, "/api/attendance/**")
-                        .hasAnyRole("ADMIN", "OFFICE_ADMIN")
+                        .hasAnyRole("ADMIN", "OFFICE_ADMIN", "OFFICE_USER")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

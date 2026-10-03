@@ -1,7 +1,6 @@
 package com.user.management.report;
 
 import com.user.management.model.MonthlyReportResponse;
-import com.user.management.model.MonthlyReportRow;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -12,18 +11,14 @@ import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.Locale;
 
 /**
- * The sewadar attendance sheet, as a PDF.
+ * The monthly hours sheet, as a PDF.
  *
- * <p>Six columns: <b>S.No, GR. No, Name, Age, Zone</b> and one column named after the
- * month the report covers, holding that sewadar's total hours in it. GR. No is the
- * badge number - the number people actually quote - and the month column is the whole
- * point of the sheet, which is why it carries the month's name rather than a generic
- * "Hours" heading.</p>
+ * <p>One table per zone, printed one after another under a single title. Five columns:
+ * <b>S. NO., GR NO., NAME, ZONE</b> and the month's hours, every one of them centred.
+ * ZONE holds the sewadar's grouping and the hours are the effective ones - {@link ZoneHoursSheet} says why, and
+ * decides the order; this class only draws what it is given.</p>
  *
  * <p>Drawn with PDFBox, which has no table support: every rule and every string is
  * placed by hand. That is why the column widths are declared once, up front, and
@@ -36,64 +31,56 @@ public class PdfReportWriter {
     private static final PDRectangle PAGE = PDRectangle.A4;
 
     private static final float MARGIN = 36f;
-    private static final float ROW_HEIGHT = 20f;
+    private static final float ROW_HEIGHT = 22f;
     private static final float HEADER_HEIGHT = 24f;
-    private static final float FONT_SIZE = 9.5f;
-    private static final float HEADER_FONT_SIZE = 9.5f;
+    private static final float CAPTION_HEIGHT = 26f;
+    private static final float TITLE_BLOCK = 46f;
+    private static final float FONT_SIZE = 10f;
     private static final float CELL_PAD = 6f;
 
-    /** S.No, GR. No, Name, Age, Zone, <month>. Sums to the printable width. */
-    private static final float[] COLUMN_WIDTHS = { 42f, 80f, 165f, 38f, 130f, 68f };
+    /** The title's grey, as on the sheet the office keeps. */
+    private static final float TITLE_GREY = 0.50f;
 
-    private static final String[] HEADINGS = { "S.No", "GR. No", "Name", "Age", "Zone", null };
+    /** S. NO., GR NO., NAME, ZONE, <Mon> HOURS. Sums to the printable width. */
+    private static final float[] COLUMN_WIDTHS = { 52f, 76f, 185f, 130f, 80f };
 
-    private static final DateTimeFormatter MONTH_COLUMN =
-            DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH);
-    private static final DateTimeFormatter PERIOD =
-            DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
+    private static final String[] HEADINGS = { "S. NO.", "GR NO.", "NAME", "ZONE", null };
 
     public byte[] write(MonthlyReportResponse report, String brandName) {
+        ZoneHoursSheet sheet = ZoneHoursSheet.of(report);
+
         try (PDDocument document = new PDDocument();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
 
-            String monthColumn = report.fromDate().format(MONTH_COLUMN);
-            List<MonthlyReportRow> rows = report.rows();
+            Page page = new Page(document);
+            page.start();
+            page.y = drawTitle(page.stream, sheet.title(), page.y);
 
-            float usableHeight = PAGE.getHeight() - (MARGIN * 2);
-            // The first page gives up room to the title block; the rest do not.
-            int firstPageRows = (int) ((usableHeight - 86f - HEADER_HEIGHT) / ROW_HEIGHT);
-            int laterPageRows = (int) ((usableHeight - HEADER_HEIGHT) / ROW_HEIGHT);
-
-            int index = 0;
-            int pageNumber = 1;
-            int totalPages = pageCount(rows.size(), firstPageRows, laterPageRows);
-
-            do {
-                boolean first = pageNumber == 1;
-                int capacity = first ? firstPageRows : laterPageRows;
-                int end = Math.min(index + capacity, rows.size());
-
-                PDPage page = new PDPage(PAGE);
-                document.addPage(page);
-                try (PDPageContentStream c = new PDPageContentStream(document, page)) {
-                    float y = PAGE.getHeight() - MARGIN;
-                    if (first) {
-                        y = drawTitle(c, report, brandName, y);
-                    }
-                    y = drawHeader(c, monthColumn, y);
-                    for (int i = index; i < end; i++) {
-                        y = drawRow(c, i + 1, rows.get(i), y);
-                    }
-                    if (end == rows.size()) {
-                        drawTotals(c, report, y);
-                    }
-                    drawFooter(c, pageNumber, totalPages);
+            for (ZoneHoursSheet.Section section : sheet.sections()) {
+                /*
+                 * A caption with nothing under it is a promise the next page breaks,
+                 * so a zone only starts on this page if its caption, its headings and
+                 * one line of it will fit.
+                 */
+                if (page.remaining() < CAPTION_HEIGHT + HEADER_HEIGHT + ROW_HEIGHT) {
+                    page.next();
                 }
+                page.y = drawCaption(page.stream, section.caption(), page.y);
+                page.y = drawHeadings(page.stream, sheet.hoursHeading(), page.y);
 
-                index = end;
-                pageNumber++;
-            } while (index < rows.size());
+                for (ZoneHoursSheet.Line line : section.lines()) {
+                    if (page.remaining() < ROW_HEIGHT) {
+                        page.next();
+                        // The headings come with the table wherever it continues.
+                        page.y = drawCaption(page.stream, section.caption(), page.y);
+                        page.y = drawHeadings(page.stream, sheet.hoursHeading(), page.y);
+                    }
+                    page.y = drawLine(page.stream, line, page.y);
+                }
+                page.y -= 14f;   // air before the next zone
+            }
 
+            page.finish(brandName);
             document.save(out);
             return out.toByteArray();
         } catch (IOException e) {
@@ -101,111 +88,132 @@ public class PdfReportWriter {
         }
     }
 
-    private int pageCount(int rowCount, int firstPageRows, int laterPageRows) {
-        if (rowCount <= firstPageRows) {
-            return 1;
+    /**
+     * The page being drawn on, and the pen's height down it.
+     *
+     * <p>PDFBox will not let a closed stream be reopened, so starting a new page means
+     * closing one stream and opening another. Keeping that in one place is what stops
+     * a half-drawn table from leaking onto the wrong page.</p>
+     */
+    private final class Page {
+        private final PDDocument document;
+        private PDPageContentStream stream;
+        private float y;
+        private int number;
+
+        private Page(PDDocument document) {
+            this.document = document;
         }
-        int remaining = rowCount - firstPageRows;
-        return 1 + (int) Math.ceil((double) remaining / laterPageRows);
+
+        private void start() throws IOException {
+            PDPage page = new PDPage(PAGE);
+            document.addPage(page);
+            stream = new PDPageContentStream(document, page);
+            y = PAGE.getHeight() - MARGIN;
+            number++;
+        }
+
+        private void next() throws IOException {
+            drawFooter(stream, number);
+            stream.close();
+            start();
+        }
+
+        private void finish(String brandName) throws IOException {
+            drawFooter(stream, number);
+            drawBrand(stream, brandName);
+            stream.close();
+        }
+
+        /** How much room is left above the bottom margin. */
+        private float remaining() {
+            return y - MARGIN - 16f;
+        }
     }
 
     // ------------------------------------------------------------------ blocks
 
-    private float drawTitle(PDPageContentStream c, MonthlyReportResponse report,
-                            String brandName, float top) throws IOException {
-        float y = top - 14f;
-        text(c, bold(), 15f, MARGIN, y, brandName);
-
-        y -= 18f;
-        text(c, bold(), 11.5f, MARGIN, y, report.title());
-
-        y -= 14f;
-        String period = report.fromDate().format(PERIOD) + " to " + report.toDate().format(PERIOD);
-        text(c, plain(), 9f, MARGIN, y, period
-                + "   |   Zone: " + blankToAll(report.zoneName())
-                + "   |   Sewa: " + blankToAll(report.sewaTypeLabel()));
-
-        y -= 14f;
-        text(c, plain(), 9f, MARGIN, y,
-                "Sewadars: " + report.totals().sewadarCount()
-                        + "   |   Total hours: " + trim(report.totals().totalHours()));
-
-        return y - 18f;
+    private float drawTitle(PDPageContentStream c, String title, float top) throws IOException {
+        float y = top - 22f;
+        // Grey, so the month names the page without competing with the tables under it.
+        c.setNonStrokingColor(TITLE_GREY, TITLE_GREY, TITLE_GREY);
+        centredText(c, bold(), 18f, MARGIN, tableWidth(), y, title);
+        c.setNonStrokingColor(0f, 0f, 0f);
+        return top - TITLE_BLOCK;
     }
 
-    private float drawHeader(PDPageContentStream c, String monthColumn, float top) throws IOException {
-        float y = top - HEADER_HEIGHT;
+    /** The zone's name across the whole table: "ZONE 1A Sep HOURS". */
+    private float drawCaption(PDPageContentStream c, String caption, float top) throws IOException {
+        float y = top - CAPTION_HEIGHT;
+        box(c, MARGIN, y, tableWidth(), CAPTION_HEIGHT);
+        centredText(c, bold(), 11.5f, MARGIN, tableWidth(), y + 8.5f, caption);
+        return y;
+    }
 
-        c.setNonStrokingColor(0.93f, 0.95f, 0.98f);
-        c.addRect(MARGIN, y, tableWidth(), HEADER_HEIGHT);
-        c.fill();
-        c.setNonStrokingColor(0f, 0f, 0f);
+    private float drawHeadings(PDPageContentStream c, String hoursHeading, float top)
+            throws IOException {
+        float y = top - HEADER_HEIGHT;
+        box(c, MARGIN, y, tableWidth(), HEADER_HEIGHT);
 
         float x = MARGIN;
         for (int i = 0; i < COLUMN_WIDTHS.length; i++) {
-            String heading = HEADINGS[i] == null ? monthColumn : HEADINGS[i];
-            // The month column holds a number, so its heading is right aligned too.
-            if (i == COLUMN_WIDTHS.length - 1) {
-                rightText(c, bold(), HEADER_FONT_SIZE, x + COLUMN_WIDTHS[i] - CELL_PAD,
-                        y + 7.5f, heading);
-            } else {
-                text(c, bold(), HEADER_FONT_SIZE, x + CELL_PAD, y + 7.5f,
-                        fit(heading, COLUMN_WIDTHS[i], HEADER_FONT_SIZE, true));
+            String heading = HEADINGS[i] == null ? hoursHeading : HEADINGS[i];
+            cell(c, bold(), x, y + 7.5f, COLUMN_WIDTHS[i], heading);
+            if (i > 0) {
+                line(c, x, y, x, y + HEADER_HEIGHT);
             }
             x += COLUMN_WIDTHS[i];
         }
-
-        line(c, MARGIN, y, MARGIN + tableWidth(), y);
         return y;
     }
 
-    private float drawRow(PDPageContentStream c, int serial, MonthlyReportRow row, float top)
+    private float drawLine(PDPageContentStream c, ZoneHoursSheet.Line line, float top)
             throws IOException {
         float y = top - ROW_HEIGHT;
-        float baseline = y + 6f;
+        box(c, MARGIN, y, tableWidth(), ROW_HEIGHT);
 
         String[] values = {
-                String.valueOf(serial),
-                nullToDash(row.badgeNumber()),
-                nullToDash(row.sewadarName()),
-                row.age() == null ? "-" : String.valueOf(row.age()),
-                nullToDash(row.zoneName()),
-                trim(row.totalHours()),
+                String.valueOf(line.serial()),
+                line.badgeNumber(),
+                line.name(),
+                line.zone(),
+                String.valueOf(line.hours()),
         };
 
+        PDType1Font font = line.emphasised() ? bold() : plain();
         float x = MARGIN;
         for (int i = 0; i < values.length; i++) {
-            if (i == values.length - 1) {
-                rightText(c, plain(), FONT_SIZE, x + COLUMN_WIDTHS[i] - CELL_PAD, baseline, values[i]);
-            } else {
-                text(c, plain(), FONT_SIZE, x + CELL_PAD, baseline,
-                        fit(values[i], COLUMN_WIDTHS[i], FONT_SIZE, false));
+            cell(c, font, x, y + 7f, COLUMN_WIDTHS[i], values[i]);
+            if (i > 0) {
+                line(c, x, y, x, y + ROW_HEIGHT);
             }
             x += COLUMN_WIDTHS[i];
         }
-
-        c.setStrokingColor(0.88f, 0.90f, 0.94f);
-        line(c, MARGIN, y, MARGIN + tableWidth(), y);
-        c.setStrokingColor(0f, 0f, 0f);
         return y;
     }
 
-    private void drawTotals(PDPageContentStream c, MonthlyReportResponse report, float top)
-            throws IOException {
-        float y = top - ROW_HEIGHT;
-        float labelRight = MARGIN + tableWidth() - COLUMN_WIDTHS[5] - CELL_PAD;
-
-        rightText(c, bold(), FONT_SIZE, labelRight, y + 6f, "Total");
-        rightText(c, bold(), FONT_SIZE, MARGIN + tableWidth() - CELL_PAD, y + 6f,
-                trim(report.totals().totalHours()));
-        line(c, MARGIN, y, MARGIN + tableWidth(), y);
+    private void drawBrand(PDPageContentStream c, String brandName) throws IOException {
+        text(c, plain(), 8f, MARGIN, MARGIN - 12f, brandName);
     }
 
-    private void drawFooter(PDPageContentStream c, int page, int of) throws IOException {
-        rightText(c, plain(), 8f, MARGIN + tableWidth(), MARGIN - 12f, "Page " + page + " of " + of);
+    private void drawFooter(PDPageContentStream c, int page) throws IOException {
+        rightText(c, plain(), 8f, MARGIN + tableWidth(), MARGIN - 12f, "Page " + page);
     }
 
     // ----------------------------------------------------------------- drawing
+
+    /** One cell's text, centred in its column and clipped to it. */
+    private void cell(PDPageContentStream c, PDType1Font font, float x, float baseline,
+                      float columnWidth, String value) throws IOException {
+        centredText(c, font, FONT_SIZE, x, columnWidth, baseline, fit(value, columnWidth, font));
+    }
+
+    private void box(PDPageContentStream c, float x, float y, float width, float height)
+            throws IOException {
+        c.setLineWidth(0.6f);
+        c.addRect(x, y, width, height);
+        c.stroke();
+    }
 
     private void text(PDPageContentStream c, PDType1Font font, float size,
                       float x, float y, String value) throws IOException {
@@ -217,6 +225,11 @@ public class PdfReportWriter {
         c.endText();
     }
 
+    private void centredText(PDPageContentStream c, PDType1Font font, float size,
+                             float x, float width, float y, String value) throws IOException {
+        text(c, font, size, x + ((width - width(font, size, value)) / 2f), y, value);
+    }
+
     private void rightText(PDPageContentStream c, PDType1Font font, float size,
                            float right, float y, String value) throws IOException {
         text(c, font, size, right - width(font, size, value), y, value);
@@ -224,21 +237,20 @@ public class PdfReportWriter {
 
     private void line(PDPageContentStream c, float x1, float y1, float x2, float y2)
             throws IOException {
-        c.setLineWidth(0.5f);
+        c.setLineWidth(0.6f);
         c.moveTo(x1, y1);
         c.lineTo(x2, y2);
         c.stroke();
     }
 
     /** Trims a value to its column, with an ellipsis, so it cannot run into the next. */
-    private String fit(String value, float columnWidth, float size, boolean boldFont) {
-        PDType1Font font = boldFont ? bold() : plain();
+    private String fit(String value, float columnWidth, PDType1Font font) {
         float room = columnWidth - (CELL_PAD * 2);
-        if (width(font, size, value) <= room) {
+        if (width(font, FONT_SIZE, value) <= room) {
             return value;
         }
         String cut = value;
-        while (cut.length() > 1 && width(font, size, cut + "...") > room) {
+        while (cut.length() > 1 && width(font, FONT_SIZE, cut + "...") > room) {
             cut = cut.substring(0, cut.length() - 1);
         }
         return cut + "...";
@@ -278,22 +290,6 @@ public class PdfReportWriter {
             sb.append(ch < 32 || ch > 255 ? '?' : ch);
         }
         return sb.toString();
-    }
-
-    private String nullToDash(String value) {
-        return value == null || value.isBlank() ? "-" : sanitise(value);
-    }
-
-    private String blankToAll(String value) {
-        return value == null || value.isBlank() ? "All" : sanitise(value);
-    }
-
-    /** 8.0 -> "8", 8.25 -> "8.25": no trailing zeros on a whole number of hours. */
-    private String trim(double value) {
-        if (value == Math.floor(value) && !Double.isInfinite(value)) {
-            return String.valueOf((long) value);
-        }
-        return String.valueOf(Math.round(value * 100.0) / 100.0);
     }
 
     private PDType1Font plain() {

@@ -1,4 +1,5 @@
 import api from './client'
+import { stampNow } from '../dates'
 
 export const authApi = {
   login: (payload) => api.post('/api/auth/login', payload).then((r) => r.data),
@@ -24,6 +25,19 @@ export const setupApi = {
   createPoint: (payload) => api.post('/api/setup/points', payload).then((r) => r.data),
   updatePoint: (id, payload) => api.put(`/api/setup/points/${id}`, payload).then((r) => r.data),
   removePoint: (id) => api.delete(`/api/setup/points/${id}`).then((r) => r.data),
+
+  designations: (params) => api.get('/api/setup/designations', { params }).then((r) => r.data),
+  createDesignation: (payload) =>
+    api.post('/api/setup/designations', payload).then((r) => r.data),
+  updateDesignation: (id, payload) =>
+    api.put(`/api/setup/designations/${id}`, payload).then((r) => r.data),
+  removeDesignation: (id) => api.delete(`/api/setup/designations/${id}`).then((r) => r.data),
+
+  sewaPoints: (params) => api.get('/api/setup/sewa-points', { params }).then((r) => r.data),
+  createSewaPoint: (payload) => api.post('/api/setup/sewa-points', payload).then((r) => r.data),
+  updateSewaPoint: (id, payload) =>
+    api.put(`/api/setup/sewa-points/${id}`, payload).then((r) => r.data),
+  removeSewaPoint: (id) => api.delete(`/api/setup/sewa-points/${id}`).then((r) => r.data),
 }
 
 export const zoneApi = {
@@ -72,6 +86,23 @@ export function forgetPhoto(kind, id) {
   }
 }
 
+/**
+ * Empties the cache, and is called when the signed-in person changes.
+ *
+ * The cache lives in the page, not in storage, so signing out and signing in as
+ * somebody else in the same tab would otherwise keep serving pictures fetched
+ * under the previous session - including people the new account has no business
+ * seeing. The blob URLs are revoked rather than dropped, so the bytes go too.
+ */
+export function clearPhotoCache() {
+  for (const pending of photoCache.values()) {
+    Promise.resolve(pending).then((url) => {
+      if (url) URL.revokeObjectURL(url)
+    })
+  }
+  photoCache.clear()
+}
+
 const photoActions = (kind) => ({
   upload: (id, file) => {
     const body = new FormData()
@@ -103,6 +134,37 @@ export const sewadarApi = {
   badgeSummary: () => api.get('/api/sewadars/badges/summary').then((r) => r.data),
   /** All / active / inactive, scoped, for the list tabs. */
   counts: () => api.get('/api/sewadars/counts').then((r) => r.data),
+  /**
+    * The empty Bulk Add Sewadar template, saved as addSewadar-<date>-<time>.xlsx.
+    *
+    * A workbook rather than a CSV because the columns carry dropdowns and the
+    * required ones are red - neither survives in plain text. It is filled in, saved
+    * as CSV, and that CSV is what bulkUpload sends.
+    *
+    * The stamp is there because these are downloaded again and again: without it
+    * the browser leaves a folder of addSewadar (1).xlsx and nobody can tell which
+    * one they were filling in.
+    */
+  template: async () => {
+    const response = await api.get('/api/sewadars/template', { responseType: 'blob' })
+    const name = `addSewadar-${stampNow()}.xlsx`
+    const url = window.URL.createObjectURL(new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    return name
+  },
+  bulkUpload: (file) => {
+    const body = new FormData()
+    body.append('file', file)
+    return api.post('/api/sewadars/bulk', body).then((r) => r.data)
+  },
   issueBadge: (id) => api.post(`/api/sewadars/${id}/badge/issue`).then((r) => r.data),
   receiveBadge: (id) => api.post(`/api/sewadars/${id}/badge/receive`).then((r) => r.data),
 }
@@ -137,7 +199,7 @@ export const attendanceApi = {
 
 export const reportApi = {
   monthly: (params) => api.get('/api/reports/monthly', { params }).then((r) => r.data),
-  rosterSewa: (params) => api.get('/api/reports/roster-sewa', { params }).then((r) => r.data),
+  dailySewa: (params) => api.get('/api/reports/roster-sewa', { params }).then((r) => r.data),
   constructionSewa: (params) =>
     api.get('/api/reports/construction-sewa', { params }).then((r) => r.data),
   range: (params) => api.get('/api/reports/range', { params }).then((r) => r.data),
@@ -173,6 +235,28 @@ export const reportApi = {
     window.URL.revokeObjectURL(url)
     return fileName
   },
+}
+
+/** Construction sewa: one entry per sewadar per day, always read one sewadar at a time. */
+export const constructionApi = {
+  forSewadar: (sewadarId, params) =>
+    api.get(`/api/construction-sewa/sewadar/${sewadarId}`, { params }).then((r) => r.data),
+  record: (payload) => api.post('/api/construction-sewa', payload).then((r) => r.data),
+  /** Removes one recorded day, by its own id. */
+  remove: (id) => api.delete(`/api/construction-sewa/${id}`).then((r) => r.data),
+}
+
+/** Weekly seating sewa: a token per sewadar per Sunday or Thursday. */
+export const weeklySeatingApi = {
+  forSewadar: (sewadarId, params) =>
+    api.get(`/api/weekly-seating/sewadar/${sewadarId}`, { params }).then((r) => r.data),
+  record: (payload) => api.post('/api/weekly-seating', payload).then((r) => r.data),
+  /** The day's issued and received counts, by gender. */
+  summary: (date) =>
+    api.get('/api/weekly-seating/summary', { params: { date } }).then((r) => r.data),
+  /** The people behind one of those counts. */
+  day: (params) => api.get('/api/weekly-seating/day', { params }).then((r) => r.data),
+  remove: (id) => api.delete(`/api/weekly-seating/${id}`).then((r) => r.data),
 }
 
 export const requestApi = {

@@ -1,23 +1,30 @@
 package com.user.management.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
- * An area inside a zone - the second level of the office's geography, between the
- * zone and the satsang point.
+ * An area, as a list of its own.
  *
- * <p>Set up on the Setup screen so the sewadar form offers a list rather than a free
- * text box, which is what stopped "Geeta Vihar" and "geeta vihar" being two different
- * places.</p>
+ * <p>It used to belong to a zone, which made the Add Sewadar form narrow the area
+ * picker by whichever zone was chosen. The office keeps areas, zones and satsang
+ * points as three separate lists, so the area no longer knows about zones and the
+ * name stands alone.</p>
  */
 @Entity
 @Table(name = "areas",
-        uniqueConstraints = @UniqueConstraint(name = "uk_area_zone_name",
-                columnNames = {"zoneId", "name"}),
-        indexes = @Index(name = "idx_area_zone", columnList = "zoneId"))
+        uniqueConstraints = @UniqueConstraint(name = "uk_area_name", columnNames = "name"))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -32,12 +39,6 @@ public class Area extends Auditable {
     @NotBlank
     @Column(nullable = false, length = 120)
     private String name;
-
-    /** The zone this area belongs to. An area never spans two zones. */
-    @NotNull
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "zoneId", nullable = false)
-    private Zone zone;
 
     @Builder.Default
     @Column(nullable = false)

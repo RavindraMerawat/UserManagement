@@ -1,7 +1,9 @@
 package com.user.management.service;
 
 import com.user.management.entity.AttendanceStatus;
+import com.user.management.entity.Locality;
 import com.user.management.repository.projection.GenderCount;
+import com.user.management.repository.projection.LocalityGenderCount;
 import com.user.management.entity.Gender;
 import com.user.management.entity.RequestStatus;
 import com.user.management.model.AttendanceResponse;
@@ -58,13 +60,13 @@ public class DashboardService {
         // so tapping a tile can never show a different number of rows than the tile
         // just showed.
         long totalSewadars = sewadarRepository.countForDashboard(
-                null, today, scope.zoneIds(), scope.sewadarId());
+                null, today, scope.zoneIds(), scope.gender(), scope.sewadarId());
         long presentToday = sewadarRepository.countForDashboard(
-                AttendanceStatus.PRESENT, today, scope.zoneIds(), scope.sewadarId());
+                AttendanceStatus.PRESENT, today, scope.zoneIds(), scope.gender(), scope.sewadarId());
         long absentToday = sewadarRepository.countForDashboard(
-                AttendanceStatus.ABSENT, today, scope.zoneIds(), scope.sewadarId());
+                AttendanceStatus.ABSENT, today, scope.zoneIds(), scope.gender(), scope.sewadarId());
         long leaveToday = sewadarRepository.countForDashboard(
-                AttendanceStatus.LEAVE, today, scope.zoneIds(), scope.sewadarId());
+                AttendanceStatus.LEAVE, today, scope.zoneIds(), scope.gender(), scope.sewadarId());
 
         // Male and female for the three cards the dashboard draws twice: one grouped
         // query each, rather than one count per gender per metric.
@@ -78,25 +80,29 @@ public class DashboardService {
         // Yesterday for the day tiles; the end of last month for the register total.
         LocalDate yesterday = today.minusDays(1);
         long presentYesterday = sewadarRepository.countForDashboard(
-                AttendanceStatus.PRESENT, yesterday, scope.zoneIds(), scope.sewadarId());
+                AttendanceStatus.PRESENT, yesterday, scope.zoneIds(), scope.gender(), scope.sewadarId());
         long absentYesterday = sewadarRepository.countForDashboard(
-                AttendanceStatus.ABSENT, yesterday, scope.zoneIds(), scope.sewadarId());
+                AttendanceStatus.ABSENT, yesterday, scope.zoneIds(), scope.gender(), scope.sewadarId());
         long leaveYesterday = sewadarRepository.countForDashboard(
-                AttendanceStatus.LEAVE, yesterday, scope.zoneIds(), scope.sewadarId());
+                AttendanceStatus.LEAVE, yesterday, scope.zoneIds(), scope.gender(), scope.sewadarId());
         DashboardResponse.GenderSplit presentByGenderYesterday =
                 splitOf(AttendanceStatus.PRESENT, yesterday, scope);
         DashboardResponse.GenderSplit absentByGenderYesterday =
                 splitOf(AttendanceStatus.ABSENT, yesterday, scope);
 
+        // The register as the office reads it: local men and women, outstation men
+        // and women. Every role sees it, each within their own reach.
+        DashboardResponse.LocalitySplit byLocality = localitySplit(scope);
+
         long totalLastMonth = sewadarRepository.countActiveAsOf(
                 monthStart.atStartOfDay(ZoneId.systemDefault()).toInstant(),
-                scope.zoneIds(), scope.sewadarId());
+                scope.zoneIds(), scope.gender(), scope.sewadarId());
 
         long pendingRequests = requestRepository.countInScope(
-                RequestStatus.PENDING, scope.zoneIds(), scope.sewadarId());
+                RequestStatus.PENDING, scope.zoneIds(), scope.gender(), scope.sewadarId());
         long pendingLastWeek = requestRepository.countPendingAsOf(
                 today.minusDays(7).atStartOfDay(ZoneId.systemDefault()).toInstant(),
-                scope.zoneIds(), scope.sewadarId());
+                scope.zoneIds(), scope.gender(), scope.sewadarId());
 
         // Account totals are only meaningful - and only permitted - for the roles
         // that administer accounts. Everyone else gets zero here, and the dashboard
@@ -112,12 +118,12 @@ public class DashboardService {
                 : 0;
 
         Map<String, Long> statusBreakdown = attendanceRepository
-                .countByStatus(monthStart, monthEnd, scope.zoneIds(), scope.sewadarId()).stream()
+                .countByStatus(monthStart, monthEnd, scope.zoneIds(), scope.gender(), scope.sewadarId()).stream()
                 .collect(Collectors.toMap(r -> r.getStatus().getDisplayName(), r -> r.getCount(),
                         (a, b) -> a, LinkedHashMap::new));
 
         Map<String, Long> sewaTypeBreakdown = attendanceRepository
-                .countBySewaType(monthStart, monthEnd, scope.zoneIds(), scope.sewadarId()).stream()
+                .countBySewaType(monthStart, monthEnd, scope.zoneIds(), scope.gender(), scope.sewadarId()).stream()
                 .collect(Collectors.toMap(r -> r.getSewaType().getDisplayName(), r -> r.getCount(),
                         (a, b) -> a, LinkedHashMap::new));
 
@@ -141,7 +147,7 @@ public class DashboardService {
 
         List<AttendanceResponse> recent = attendanceRepository.search(
                         null, null, null, null, null, null,
-                        scope.zoneIds(), scope.sewadarId(),
+                        scope.zoneIds(), scope.gender(), scope.sewadarId(),
                         PageRequest.of(0, 8, Sort.by(Sort.Direction.DESC, "attendanceDate", "id")))
                 .getContent().stream()
                 .map(AttendanceResponse::from)
@@ -159,6 +165,7 @@ public class DashboardService {
                 absentByGender,
                 presentByGenderYesterday,
                 absentByGenderYesterday,
+                byLocality,
                 presentToday,
                 absentToday,
                 leaveToday,
@@ -188,7 +195,7 @@ public class DashboardService {
         LocalDate yearStart = today.withDayOfYear(1);
         Map<Integer, Map<AttendanceStatus, Long>> byMonth = new LinkedHashMap<>();
         attendanceRepository
-                .countByMonthAndStatus(yearStart, today, scope.zoneIds(), scope.sewadarId())
+                .countByMonthAndStatus(yearStart, today, scope.zoneIds(), scope.gender(), scope.sewadarId())
                 .forEach(row -> byMonth
                         .computeIfAbsent(row.getMonth(), m -> new EnumMap<>(AttendanceStatus.class))
                         .put(row.getStatus(), row.getCount()));
@@ -211,6 +218,26 @@ public class DashboardService {
      * no women on its roster - and `other` keeps the people whose record carries no
      * gender at all, so male + female + other always equals the total.
      */
+    /** Local and outstation, each split by gender, from one grouped query. */
+    private DashboardResponse.LocalitySplit localitySplit(DataScope scope) {
+        long[] local = new long[3];
+        long[] outstation = new long[3];
+        long[] unrecorded = new long[3];
+        for (LocalityGenderCount row : sewadarRepository.countByLocalityAndGender(
+                scope.zoneIds(), scope.gender(), scope.sewadarId())) {
+            long[] side = row.getLocality() == Locality.LOCAL ? local
+                    : row.getLocality() == Locality.OUTSTATION ? outstation
+                    : unrecorded;
+            int slot = row.getGender() == Gender.MALE ? 0 : row.getGender() == Gender.FEMALE ? 1 : 2;
+            side[slot] += row.getCount();
+        }
+        return new DashboardResponse.LocalitySplit(split(local), split(outstation), split(unrecorded));
+    }
+
+    private DashboardResponse.GenderSplit split(long[] counts) {
+        return new DashboardResponse.GenderSplit(counts[0], counts[1], counts[2]);
+    }
+
     private DashboardResponse.GenderSplit splitOf(AttendanceStatus status,
                                                   LocalDate onDate,
                                                   DataScope scope) {
@@ -218,7 +245,7 @@ public class DashboardService {
         long female = 0;
         long other = 0;
         for (GenderCount row : sewadarRepository.countForDashboardByGender(
-                status, onDate, scope.zoneIds(), scope.sewadarId())) {
+                status, onDate, scope.zoneIds(), scope.gender(), scope.sewadarId())) {
             if (row.getGender() == Gender.MALE) {
                 male += row.getCount();
             } else if (row.getGender() == Gender.FEMALE) {

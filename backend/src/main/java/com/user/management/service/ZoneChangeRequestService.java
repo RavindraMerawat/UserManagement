@@ -45,7 +45,7 @@ public class ZoneChangeRequestService {
     public PageResponse<ZoneChangeRequestResponse> search(RequestStatus status, Pageable pageable) {
         DataScope scope = currentUser.scope();
         return PageResponse.of(
-                requestRepository.search(status, scope.zoneIds(), scope.sewadarId(), pageable),
+                requestRepository.search(status, scope.zoneIds(), scope.gender(), scope.sewadarId(), pageable),
                 ZoneChangeRequestResponse::from);
     }
 
@@ -54,13 +54,13 @@ public class ZoneChangeRequestService {
     public TabCountsResponse tabCounts() {
         DataScope scope = currentUser.scope();
         return TabCountsResponse.of(
-                requestRepository.countByStatusInScope(null, scope.zoneIds(), scope.sewadarId()),
+                requestRepository.countByStatusInScope(null, scope.zoneIds(), scope.gender(), scope.sewadarId()),
                 "pending", requestRepository.countByStatusInScope(
-                        RequestStatus.PENDING, scope.zoneIds(), scope.sewadarId()),
+                        RequestStatus.PENDING, scope.zoneIds(), scope.gender(), scope.sewadarId()),
                 "approved", requestRepository.countByStatusInScope(
-                        RequestStatus.APPROVED, scope.zoneIds(), scope.sewadarId()),
+                        RequestStatus.APPROVED, scope.zoneIds(), scope.gender(), scope.sewadarId()),
                 "rejected", requestRepository.countByStatusInScope(
-                        RequestStatus.REJECTED, scope.zoneIds(), scope.sewadarId()));
+                        RequestStatus.REJECTED, scope.zoneIds(), scope.gender(), scope.sewadarId()));
     }
 
     @Transactional(readOnly = true)
@@ -70,6 +70,9 @@ public class ZoneChangeRequestService {
 
     @Transactional
     public ZoneChangeRequestResponse create(ZoneChangeCreateRequest request) {
+        if (!currentUser.canCreateZoneRequest()) {
+            throw new ForbiddenException("Your designation cannot raise a zone change request");
+        }
         Sewadar sewadar = resolveSubject(request.sewadarId());
 
         if (sewadar.getZone().getId().equals(request.toZoneId())) {
@@ -100,7 +103,7 @@ public class ZoneChangeRequestService {
     @Transactional
     public ZoneChangeRequestResponse review(Long id, ZoneChangeReviewRequest review) {
         if (!currentUser.canReviewRequests()) {
-            throw new ForbiddenException("Only Admin and Office Admin can approve or reject a zone change");
+            throw new ForbiddenException("Only an Admin can approve or reject a zone change");
         }
         ZoneChangeRequest request = requestRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.of("Zone change request", id));

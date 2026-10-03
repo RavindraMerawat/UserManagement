@@ -1,7 +1,9 @@
 package com.user.management.repository;
 
+import com.user.management.entity.Gender;
 import com.user.management.entity.Attendance;
 import com.user.management.entity.AttendanceStatus;
+import com.user.management.entity.Locality;
 import com.user.management.entity.SewaType;
 import com.user.management.repository.projection.MonthlySummaryRow;
 import com.user.management.repository.projection.SewaTypeCountRow;
@@ -29,6 +31,16 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
 
     List<Attendance> findByAttendanceDateAndZoneId(LocalDate date, Long zoneId);
 
+    /**
+     * One day's rows for a page of sewadars, for the Today Hours column.
+     *
+     * <p>Asked once for the whole page rather than once per row: the dashboard list
+     * shows twenty-five people and a query each would be twenty-five round trips for
+     * one column. The ids come from a page that is already narrowed to the caller's
+     * scope, so this adds no reach of its own.</p>
+     */
+    List<Attendance> findBySewadarIdInAndAttendanceDate(Collection<Long> sewadarIds, LocalDate date);
+
     long countByAttendanceDateAndStatus(LocalDate date, AttendanceStatus status);
 
     long countByAttendanceDateAndStatusAndZoneIdIn(LocalDate date,
@@ -43,6 +55,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     @Query("""
             select a from Attendance a
             where (:zoneIds is null or a.zone.id in :zoneIds)
+              and (:scopeGender is null or a.sewadar.gender = :scopeGender)
               and (:sewadarScopeId is null or a.sewadar.id = :sewadarScopeId)
               and (:sewadarId is null or a.sewadar.id = :sewadarId)
               and (:zoneId is null or a.zone.id = :zoneId)
@@ -58,6 +71,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                             @Param("from") LocalDate from,
                             @Param("to") LocalDate to,
                             @Param("zoneIds") Collection<Long> zoneIds,
+                            @Param("scopeGender") Gender scopeGender,
                             @Param("sewadarScopeId") Long sewadarScopeId,
                             Pageable pageable);
 
@@ -65,6 +79,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     @Query("""
             select a from Attendance a
             where (:zoneIds is null or a.zone.id in :zoneIds)
+              and (:scopeGender is null or a.sewadar.gender = :scopeGender)
               and (:sewadarScopeId is null or a.sewadar.id = :sewadarScopeId)
               and (:sewadarId is null or a.sewadar.id = :sewadarId)
               and (:zoneId is null or a.zone.id = :zoneId)
@@ -79,15 +94,32 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                                    @Param("from") LocalDate from,
                                    @Param("to") LocalDate to,
                                    @Param("zoneIds") Collection<Long> zoneIds,
+                                   @Param("scopeGender") Gender scopeGender,
                                    @Param("sewadarScopeId") Long sewadarScopeId);
 
-    /** Per-sewadar aggregation behind the monthly attendance report. */
+    /**
+     * Per-sewadar aggregation behind the monthly hours sheet.
+     *
+     * <p>It starts from the sewadars and reaches out to their attendance, not the
+     * other way round. Somebody who did no sewa all month still belongs on the sheet
+     * at zero - that is half of what the office reads it for - and an attendance-first
+     * query has no row to put them on.</p>
+     *
+     * <p>Because of that the zone is the sewadar's own, not the zone each attendance
+     * was marked in. It is the only one a person with no attendance has, and it is the
+     * one the sheet is organised by.</p>
+     */
     @Query("""
             select s.id as sewadarId,
                    s.badgeNumber as badgeNumber,
                    s.name as sewadarName,
                    z.name as zoneName,
+                   coalesce(s.area, '') as area,
+                   coalesce(s.centerPoint, '') as satsangPoint,
                    coalesce(s.department, '') as department,
+                   coalesce(s.grouping, '') as groupingName,
+                   coalesce(rl.name, '') as designation,
+                   s.status as status,
                    s.dateOfBirth as birthDate,
                    s.exempted as exempted,
                    count(a.id) as totalRecords,
@@ -95,20 +127,25 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                    sum(case when a.status = com.user.management.entity.AttendanceStatus.HALF_DAY then 1 else 0 end) as halfDays,
                    sum(case when a.status = com.user.management.entity.AttendanceStatus.LEAVE then 1 else 0 end) as leaveDays,
                    sum(case when a.status = com.user.management.entity.AttendanceStatus.ABSENT then 1 else 0 end) as absentDays,
-                   sum(case when a.sewaType = com.user.management.entity.SewaType.ROSTER_SEWA then 1 else 0 end) as rosterSewaDays,
+                   sum(case when a.sewaType = com.user.management.entity.SewaType.DAILY_SEWA then 1 else 0 end) as dailySewaDays,
                    sum(case when a.sewaType = com.user.management.entity.SewaType.CONSTRUCTION_SEWA then 1 else 0 end) as constructionSewaDays,
                    coalesce(sum(a.hours), 0.0) as totalHours
-            from Attendance a
-              join a.sewadar s
-              join a.zone z
-            where a.attendanceDate between :from and :to
-              and (:zoneIds is null or z.id in :zoneIds)
+            from Sewadar s
+              join s.zone z
+              left join Attendance a
+                on a.sewadar = s
+               and a.attendanceDate between :from and :to
+               and (:sewaType is null or a.sewaType = :sewaType)
+              left join s.role rl
+            where (:zoneIds is null or z.id in :zoneIds)
+              and (:scopeGender is null or s.gender = :scopeGender)
               and (:sewadarScopeId is null or s.id = :sewadarScopeId)
               and (:sewadarId is null or s.id = :sewadarId)
               and (:zoneId is null or z.id = :zoneId)
-              and (:sewaType is null or a.sewaType = :sewaType)
-            group by s.id, s.badgeNumber, s.name, z.name, s.department,
-                     s.dateOfBirth, s.exempted
+              and (:designationId is null or rl.id = :designationId)
+              and (:locality is null or s.locality = :locality)
+            group by s.id, s.badgeNumber, s.name, z.name, s.area, s.centerPoint,
+                     s.department, s.grouping, rl.name, s.status, s.dateOfBirth, s.exempted
             order by s.name asc
             """)
     List<MonthlySummaryRow> monthlySummary(@Param("from") LocalDate from,
@@ -116,7 +153,10 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                                            @Param("sewadarId") Long sewadarId,
                                            @Param("zoneId") Long zoneId,
                                            @Param("sewaType") SewaType sewaType,
+                                           @Param("designationId") Long designationId,
+                                           @Param("locality") Locality locality,
                                            @Param("zoneIds") Collection<Long> zoneIds,
+                                           @Param("scopeGender") Gender scopeGender,
                                            @Param("sewadarScopeId") Long sewadarScopeId);
 
     /**
@@ -132,6 +172,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
             from Attendance a
             where a.attendanceDate between :from and :to
               and (:zoneIds is null or a.zone.id in :zoneIds)
+                and (:scopeGender is null or a.sewadar.gender = :scopeGender)
               and (:sewadarScopeId is null or a.sewadar.id = :sewadarScopeId)
             group by month(a.attendanceDate), a.status
             order by month(a.attendanceDate)
@@ -139,6 +180,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     List<MonthlyStatusRow> countByMonthAndStatus(@Param("from") LocalDate from,
                                                  @Param("to") LocalDate to,
                                                  @Param("zoneIds") Collection<Long> zoneIds,
+                                                 @Param("scopeGender") Gender scopeGender,
                                                  @Param("sewadarScopeId") Long sewadarScopeId);
 
     /** One (month, status) bucket of {@link #countByMonthAndStatus}. */
@@ -155,12 +197,14 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
             from Attendance a
             where a.attendanceDate between :from and :to
               and (:zoneIds is null or a.zone.id in :zoneIds)
+                and (:scopeGender is null or a.sewadar.gender = :scopeGender)
               and (:sewadarScopeId is null or a.sewadar.id = :sewadarScopeId)
             group by a.status
             """)
     List<StatusCountRow> countByStatus(@Param("from") LocalDate from,
                                        @Param("to") LocalDate to,
                                        @Param("zoneIds") Collection<Long> zoneIds,
+                                       @Param("scopeGender") Gender scopeGender,
                                        @Param("sewadarScopeId") Long sewadarScopeId);
 
     @Query("""
@@ -168,11 +212,13 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
             from Attendance a
             where a.attendanceDate between :from and :to
               and (:zoneIds is null or a.zone.id in :zoneIds)
+                and (:scopeGender is null or a.sewadar.gender = :scopeGender)
               and (:sewadarScopeId is null or a.sewadar.id = :sewadarScopeId)
             group by a.sewaType
             """)
     List<SewaTypeCountRow> countBySewaType(@Param("from") LocalDate from,
                                            @Param("to") LocalDate to,
                                            @Param("zoneIds") Collection<Long> zoneIds,
+                                           @Param("scopeGender") Gender scopeGender,
                                            @Param("sewadarScopeId") Long sewadarScopeId);
 }
