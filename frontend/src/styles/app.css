@@ -21,6 +21,11 @@
 /* ------------------------------------------------------------ 1. tokens - */
 
 :root {
+  /* One dashboard card, and the space between two. Four of them plus three gaps
+     is the widest a card row is allowed to be, which is what caps a row at four. */
+  --card-w: 230px;
+  --card-gap: 16px;
+
   /* The navy rail and the primary button, read off the design. */
   --navy: #1a3a5f;
   --navy-deep: #15304f;
@@ -2065,54 +2070,47 @@ table.report-table td {
   padding-right: 9px;
 }
 
+/*
+ * Cards are a standard size, however many of them there are.
+ *
+ * A label gets one line and is clipped if it does not fit, carrying its full text
+ * as a tooltip - a card should not stretch to suit its longest heading, and it
+ * should not stretch to suit an empty row either. The tracks are a width, not a
+ * fraction: with `1fr` a role that saw two cards got two cards half the width of
+ * the screen, with a figure and three words adrift in the middle of each. The same
+ * card is the same size for everybody; where there are too few to fill the row,
+ * the row is centred rather than the cards grown.
+ *
+ * `max-width` is what caps the row at four, so there is no column count to keep in
+ * step with it at each breakpoint - four cards plus their gaps is simply as wide as
+ * the grid is allowed to be.
+ */
 .tile-grid,
 .stat-grid {
   display: grid;
-  /*
-   * A label gets one line and is clipped if it does not fit, carrying its full
-   * text as a tooltip - a card should not stretch to suit its longest heading.
-   */
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-/*
- * Four cards to a row at most, however many the role has.
- *
- * It used to be pinned at five, which was the number the Admin saw; a role with
- * three got three stretched across the width and a role with seven got five and a
- * ragged two. Four is the width at which the longest label - "Total Outstation
- * Sewadar - Female" - still reads, and auto-fit fills the row with whatever the
- * role actually has.
- */
-@media (min-width: 1100px) {
-  .tile-grid {
-    /*
-     * Four columns, and a card never takes more than one.
-     *
-     * A quarter each, pinned rather than auto-fit: auto-fit with a pixel minimum
-     * gave three across on this layout, because the dashboard is narrower than the
-     * window by the width of the menu. A role with three cards fills three of the
-     * four and leaves the last empty, which keeps every card the same size on every
-     * screen - a card that stretches to a third because there are only three of
-     * them reads as a different kind of card.
-     */
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  /* At a fifth of the width the figure matters more than the padding around it. */
-  .tile-grid .tile {
-    padding: 16px 14px;
-    gap: 11px;
-  }
+  grid-template-columns: repeat(auto-fit, minmax(200px, var(--card-w)));
+  justify-content: center;
+  gap: var(--card-gap);
+  margin: 0 auto 20px;
+  max-width: calc(var(--card-w) * 4 + var(--card-gap) * 3);
 }
 
 .tile,
 .stat {
   display: flex;
   align-items: flex-start;
+  /*
+   * A card may be narrower than the words inside it.
+   *
+   * A grid item's automatic minimum is its min-content width, and the zone list on
+   * the hint line is one long unbroken string - "Zone 1 - North, Zone 2 - South,
+   * Zone 3 - East, Zone 4 - West". Clamping it to a line does not shrink that
+   * minimum: `display: -webkit-box` still measures the whole run. So every track
+   * floored at about 385px and two of them ran off the side of a phone, which is
+   * what the ellipsis was there to prevent. Nothing below this line can widen the
+   * card now; the text clips and the tooltip says the rest.
+   */
+  min-width: 0;
   gap: 14px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -2911,10 +2909,13 @@ tr.row-picked td {
   background: var(--brand-light);
 }
 
+/*
+ * The badge day's cards are the dashboard's cards and are sized by the same rule
+ * above - this only keeps the hook for the responsive overrides. It used to set
+ * its own narrower, stretching columns, which is why a female login's two cards
+ * filled the row where the dashboard's two would not have.
+ */
 .badge-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 16px;
   margin-bottom: 20px;
 }
 

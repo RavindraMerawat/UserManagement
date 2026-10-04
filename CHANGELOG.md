@@ -3319,6 +3319,57 @@ untouched - suite unchanged at **191 tests, all passing**.
 
 ---
 
+## 44. A card is a size, not a share of the row
+
+Reported with a screenshot of two dashboard cards running half the width of the
+screen each: *"this cards is very big so please reduce the size, make this card a
+standard size, and this card is center position."*
+
+### The cards were measured in fractions
+
+`grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))`. The `1fr` is the whole
+of it: the cards divided up whatever width was going, so the number of cards decided
+how big each one was. A role with seven got seven sensible cards; a role with two got
+two enormous ones, a figure and three words adrift in the middle of each. The same
+card was a different size for different people, which is the thing a card should
+never be.
+
+The tracks are a width now - `minmax(200px, var(--card-w))` - so a card is 230px for
+everybody, and where there are too few to fill the row the **row is centred** rather
+than the cards grown. Four to a row is still the cap, but it is now a `max-width` on
+the grid rather than a column count: four cards plus three gaps is simply as wide as
+the grid may be, so there is no number to keep in step at each breakpoint. The
+`@media (min-width: 1100px)` block that used to pin four columns is gone, and
+`.badge-stats`, which set its own narrower stretching columns, now shares the rule -
+which is why a female login's two badge cards filled the row where the dashboard's
+two would not have.
+
+### The phone layout was broken, and had been
+
+Found while checking the new sizes at 390px and 600px: the card row ran off the side
+of the screen, cutting the first column in half. Measured against the **old** CSS
+too, so this was not new - it was there before this change and before the ones that
+made two-card roles possible.
+
+A grid item's automatic minimum is its min-content width, and the hint line carries
+the zone list as one long unbroken string - *"Zone 1 - North, Zone 2 - South, Zone 3 -
+East, Zone 4 - West"*. Clamping it to one line with an ellipsis does not shrink that
+minimum: `display: -webkit-box` still measures the whole run. So both `1fr` tracks
+floored at about 385px, 770px of cards inside a 390px phone, and the ellipsis that
+was there to prevent exactly this never got the chance. `min-width: 0` on the card
+lets it be narrower than its own words, which is what the clamp assumed all along.
+
+### Verified
+
+Measured in a browser across four widths and two roles. At 1280: cards 230px, an
+Office Incharge's four in one row, an Admin's seven in two, both centred. At 1920:
+still 230px and still four to a row, centred. At 900: 230px, two rows. At 600 and
+390: no horizontal overflow, where the old CSS overflowed at both. The badge day's
+two cards are 230px and centred rather than half a screen each. Backend untouched -
+suite unchanged at **191 tests, all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.
