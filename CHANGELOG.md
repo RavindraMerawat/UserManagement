@@ -3278,6 +3278,47 @@ fix to a rule the server already enforced and already had a test for).
 
 ---
 
+## 43. The badge day's cards follow the same gender rule as everything else
+
+Asked for: *"in badge details also, if any role login and gender is female then only
+female badge issue and receive cards shown, not male - and if male then only male
+cards shown, not female."*
+
+### A nought is not nothing
+
+Weekly Seating Sewa opens on four numbers for the day: Issued and Received, male and
+female. The **numbers** were already right - `summarise` counts inside
+`currentUser.scope()`, so a female login's male counts came back as 0, and searching
+`M07001` from that login returns nothing at all. What was wrong is that the two cards
+she may not see were still drawn, reading *"Issued - Male 0"*.
+
+That is worse than hiding them. A nought on a card is a measurement: it says no man
+took a badge today. The truth was that she was not being shown. The two cards outside
+the account's register are now absent rather than empty - the same rule the dashboard
+has had since change set 33, now applied where it was missed.
+
+The three cards on the Annual Satsang tab - Issued, Received, Pending - are not split
+by gender and already count within the scope, so they are unchanged.
+
+### Admin reads both, in the browser as well as on the server
+
+Found while doing it. `CurrentUserService.scope()` exempts Admin from the gender
+narrowing - the gender on an Admin account is who they are, not what they may see -
+and `accountGender` in the browser did not. Nothing showed it because the live admin
+account has no gender set, but the day somebody filled that field in, their dashboard
+and badge cards would have lost half their tiles while the numbers behind them stayed
+whole. The two agree now.
+
+### Verified
+
+In a browser, the same day and the same data through two logins: Admin sees all four
+cards; an Office Incharge with gender FEMALE sees *Issued - Female* and *Received -
+Female* and no male card at all. Against the API as that same login, searching the
+male sewadar's GR. No returns nothing, so the screen and the data agree. Backend
+untouched - suite unchanged at **191 tests, all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.

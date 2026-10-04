@@ -133,8 +133,13 @@ export function AuthProvider({ children }) {
       /**
        * Whose register this account reads, or null for both. The server narrows the
        * data either way; the screens use this to stop offering the other one.
+       *
+       * Admin is the exception and reads both, exactly as `CurrentUserService.scope()`
+       * has it - the gender on an Admin account is who they are, not what they may
+       * see. Without the same exception here an Admin who filled that field in would
+       * lose half their cards while the numbers behind them stayed whole.
        */
-      accountGender: user?.gender || null,
+      accountGender: role === 'ADMIN' ? null : user?.gender || null,
       /** Raise a zone change request. */
       canCreateZoneRequest: Boolean(user?.canCreateZoneRequest),
       /** Approve or reject a zone change. Admin only. */

@@ -53,7 +53,7 @@ function todaySeatingDay() {
  * that is the moment the person is standing there.</p>
  */
 export default function WeeklySeatingSewa() {
-  const { canManageBadges } = useAuth()
+  const { canManageBadges, accountGender } = useAuth()
 
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -308,7 +308,17 @@ export default function WeeklySeatingSewa() {
               ['Issued – Female', summary.issuedFemale, 'violet', 'ISSUE', 'FEMALE'],
               ['Received – Male', summary.receivedMale, 'green', 'RECEIVE', 'MALE'],
               ['Received – Female', summary.receivedFemale, 'amber', 'RECEIVE', 'FEMALE'],
-            ].map(([label, value, tone, action, gender]) => (
+            ]
+              /*
+                An account reads its own gender's register, so it is shown its own
+                gender's cards. The numbers were already right - the server counts
+                within the scope - but the two it may not see came back as 0, and a
+                card reading "Issued - Male 0" is worse than no card: it looks like
+                a day on which no man took a badge. Admin has no gender scope and
+                keeps all four.
+              */
+              .filter(([, , , , gender]) => !accountGender || accountGender === gender)
+              .map(([label, value, tone, action, gender]) => (
               <button
                 type="button"
                 className={`tile${openCount === `${action}-${gender}` ? ' tile-open' : ''}`}
