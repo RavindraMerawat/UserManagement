@@ -268,6 +268,9 @@ export default function WeeklySeatingSewa() {
    * offering what has been done.
    */
   const dayRow = rows.find((row) => row.sewaDate === sewaDate) || null
+  // What both buttons need before either can mean anything: a day, a badge number
+  // and no save already running.
+  const canRecord = !acting && Boolean(weekDay) && Boolean(tokenNo.trim())
   const total = result?.totalElements ?? 0
   const firstSerial = (result?.page ?? 0) * (result?.size ?? 20) + 1
   const columns = canManageBadges ? 7 : 6
@@ -524,13 +527,20 @@ export default function WeeklySeatingSewa() {
                 {/* The buttons are the save, so they sit under the three fields they
                     save rather than beside the last of them, and start at the same
                     left edge - the block reads straight down. */}
+                {/*
+                  A badge is handed over and then taken back, in that order, so only
+                  one of these is ever the thing to do: Issue until it has gone out,
+                  Receive until it comes back, neither once the day is done. The
+                  server refuses a receive that was never issued, and used to be the
+                  only thing that did - the button was live and the answer to
+                  pressing it was an error message. Disabling it says the same thing
+                  before the press instead of after.
+                */}
                 <div className="ws-actions">
                   <button
                     type="button"
                     className="btn ok"
-                    disabled={
-                      Boolean(acting) || !weekDay || !tokenNo.trim() || dayRow?.badgeIssued
-                    }
+                    disabled={!canRecord || dayRow?.badgeIssued}
                     onClick={() => markBadge('ISSUE')}
                   >
                     {acting === 'ISSUE' ? 'Issuing...' : 'Issue Badge'}
@@ -538,14 +548,18 @@ export default function WeeklySeatingSewa() {
                   <button
                     type="button"
                     className="btn danger"
-                    disabled={
-                      Boolean(acting) || !weekDay || !tokenNo.trim() || dayRow?.badgeReceived
-                    }
+                    disabled={!canRecord || !dayRow?.badgeIssued || dayRow?.badgeReceived}
                     onClick={() => markBadge('RECEIVE')}
                   >
                     {acting === 'RECEIVE' ? 'Receiving...' : 'Receive Badge'}
                   </button>
                 </div>
+                {/* A greyed-out button with no reason beside it is a dead end. */}
+                {canRecord && !dayRow?.badgeIssued && (
+                  <p className="hint ws-done">
+                    Issue the badge first - it can only be taken back once it has gone out.
+                  </p>
+                )}
                 {dayRow && (dayRow.badgeIssued || dayRow.badgeReceived) && (
                   <p className="hint ws-done">
                     {dayRow.badgeIssued && `Issued ${prettyTime(dayRow.issuedAt)}`}

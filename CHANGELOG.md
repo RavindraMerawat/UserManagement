@@ -3233,6 +3233,51 @@ profile carries the new fields. Suite: **191 tests, all passing**.
 
 ---
 
+## 42. Receive Badge was live before the badge had gone out
+
+Reported with a screenshot: GR. No F06878, badge **Pending**, a badge number typed -
+and both *Issue Badge* and *Receive Badge* offered. *"1st issue badge then receive
+badge button enable, and if issue badge then receive badge button enable and issue
+badge button disable."*
+
+### Only one of the two is ever the thing to do
+
+A badge is handed over and then taken back, in that order. The screen was not saying
+so: *Issue* correctly greyed out once the badge had gone out, but *Receive* only
+greyed out once it had already come **back** - so on a pending badge it sat there
+live, and pressing it produced *"Badge No 214 has not been issued to Sunita Merawat
+on 04-10-2026. Issue it before taking it back."*
+
+The rule was never missing, only late. `WeeklySeatingSewaService` has always refused
+a receive that was never issued, and `WeeklySeatingSewaTest` has always held it - *"a
+badge cannot come back before it went out"*. What was wrong is that the server was
+the **first** thing to mention it, after the press, as an error. The button now says
+it before the press, by being disabled.
+
+| The day so far | Issue Badge | Receive Badge |
+|---|---|---|
+| no badge number typed | off | off |
+| badge number, nothing issued | **on** | off |
+| issued, not yet back | off | **on** |
+| issued and back | off | off |
+
+A greyed-out button with no reason beside it is its own dead end, so a pending badge
+now reads *"Issue the badge first - it can only be taken back once it has gone out."*
+where the issued/received times appear later.
+
+The day's list below the form was already right: it shows the one next step per row
+rather than both buttons on every line. This brings the form into line with it.
+
+### Verified
+
+In a browser, one sewadar through the whole cycle: nothing typed - both off; badge
+number 214 typed - Issue on, Receive off, with the hint; after Issue - Issue off,
+Receive on, *"Issued 06:33 AM"*; after Receive - both off, *"Issued 06:33 AM ·
+Received 06:35 AM"*. Suite: **191 tests, all passing** (unchanged - this is a browser
+fix to a rule the server already enforced and already had a test for).
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.
