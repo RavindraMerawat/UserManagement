@@ -3370,6 +3370,56 @@ suite unchanged at **191 tests, all passing**.
 
 ---
 
+## 45. The day's list, where a list belongs
+
+Asked for, on Badge Detail: the cards ranged left rather than centred; the list that
+a card opens to appear **after** the Search and Reset buttons rather than above them;
+and two more columns on it - *"check in time and check out time, and here only weekly
+seating sewa check in and check out shown, not all attendance."*
+
+### Left, here
+
+Change set 44 centred the card row, which is right on the dashboard where the cards
+are the whole of the screen. Badge Detail is not that: the cards sit above a
+full-width search panel and a results table, and a short centred row over a
+left-aligned page reads as a mistake. The left edge of the first card is the left
+edge of everything under it now. The dashboard is unchanged.
+
+### After the controls, not before them
+
+Opening a count pushed the search box, the sewadar, the badge form and everything
+else down the page - the office clicked a number to see who was on it and lost the
+screen they were working on. The list is a result, so it now reads after the
+controls, like every other result on the page. The Annual Satsang tab already did
+this; only Weekly Seating was the other way round.
+
+### Check In and Check Out, from this desk only
+
+The two times were already being written - *"the badge going out is the check in and
+coming back is the check out"*, from change set 23 - they were simply not shown. They
+are read from the **seating record's own** `issuedAt` and `receivedAt`, not from the
+attendance table, and that is the whole of the office's "not all attendance": a
+sewadar who sat on Sunday and was also marked present for a daily sewa the same day
+has two pairs of times, and only the seating desk's pair belongs on the seating
+desk's screen. Reading them off the record makes the other pair unreachable by
+construction rather than by a filter somebody has to remember.
+
+A badge that has gone out and not come back shows its check in and a dash, which is
+the honest reading - the person is still sitting.
+
+### Verified
+
+Two new cases in `WeeklySeatingSewaTest`: the times appear and the check out stays
+empty until the badge comes back, and - the one the office asked for - a sewadar with
+other attendance the same day still shows the seating's times, not that one's. Blank
+the two fields out and the first fails. In a browser at 1280: the cards start at the
+same left edge as the panel below, the list opens under Search and Reset, and the
+columns read S.No, GR. No, Name, Mobile No, Age, Zone, Area, Badge No, Check In,
+Check Out - one row showing both times and one showing a dash. Suite: **193 tests,
+all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.

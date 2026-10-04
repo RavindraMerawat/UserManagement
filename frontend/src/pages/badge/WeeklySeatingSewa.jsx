@@ -339,78 +339,6 @@ export default function WeeklySeatingSewa() {
             ))}
           </div>
 
-          {openCount && (
-            <div className="card">
-              <div className="card-head">
-                <h3>
-                  {openCount.startsWith('ISSUE') ? 'Issued' : 'Received'} ·{' '}
-                  {openCount.endsWith('MALE') && !openCount.endsWith('FEMALE')
-                    ? 'Male'
-                    : 'Female'}{' '}
-                  · {prettyDate(sewaDate)}
-                </h3>
-                <button
-                  type="button"
-                  className="btn ghost small"
-                  onClick={() => setOpenCount(null)}
-                >
-                  Close
-                </button>
-              </div>
-
-              {countLoading ? (
-                <Spinner />
-              ) : (
-                <div className="table-wrap">
-                  <table className="table-md">
-                    <thead>
-                      <tr>
-                        <th>S.No</th>
-                        <th>GR. No</th>
-                        <th>Name</th>
-                        <th>Mobile No</th>
-                        <th>Age</th>
-                        <th>Zone</th>
-                        <th>Area</th>
-                        <th>Badge No</th>
-                        <th className="col-fill" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {countRows.length === 0 ? (
-                        <EmptyRow colSpan={8}>Nobody on this day</EmptyRow>
-                      ) : (
-                        countRows.map((row, i) => (
-                          <tr key={row.sewadarId}>
-                            <td>{countPage.page * PAGE_SIZE + i + 1}</td>
-                            <td>{row.badgeNumber}</td>
-                            <td>{row.name}</td>
-                            <td>{row.mobile || '-'}</td>
-                            <td>{row.age ?? '-'}</td>
-                            <td>{row.zoneName || '-'}</td>
-                            <td>{row.area || '-'}</td>
-                            <td>
-                              <strong>{row.tokenNo}</strong>
-                            </td>
-                            <td className="col-fill" />
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                  <Pager
-                    page={countPage.page}
-                    totalPages={countPage.totalPages}
-                    totalElements={countPage.totalElements}
-                    onChange={(next) => {
-                      const [action, gender] = openCount.split('-')
-                      openCountDetail(action, gender, next)
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
         </>
       )}
 
@@ -596,6 +524,94 @@ export default function WeeklySeatingSewa() {
         )}
       </div>
 
+      {/*
+        The people behind a card, under the search rather than above it.
+        Opening a count used to push the search box and everything below it off
+        the screen; the list is a result, so it reads after the controls like
+        every other result on this page.
+      */}
+        {openCount && (
+          <div className="card">
+            <div className="card-head">
+              <h3>
+                {openCount.startsWith('ISSUE') ? 'Issued' : 'Received'} ·{' '}
+                {openCount.endsWith('MALE') && !openCount.endsWith('FEMALE')
+                  ? 'Male'
+                  : 'Female'}{' '}
+                · {prettyDate(sewaDate)}
+              </h3>
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={() => setOpenCount(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            {countLoading ? (
+              <Spinner />
+            ) : (
+              <div className="table-wrap">
+                <table className="table-md">
+                  <thead>
+                    <tr>
+                      <th>S.No</th>
+                      <th>GR. No</th>
+                      <th>Name</th>
+                      <th>Mobile No</th>
+                      <th>Age</th>
+                      <th>Zone</th>
+                      <th>Area</th>
+                      <th>Badge No</th>
+                      {/*
+                        This desk's own two times: the badge going out is the check
+                        in and coming back is the check out. Not read from the
+                        attendance table - somebody marked present for another sewa
+                        that day should not have that time turn up in this list.
+                      */}
+                      <th>Check In</th>
+                      <th>Check Out</th>
+                      <th className="col-fill" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {countRows.length === 0 ? (
+                      <EmptyRow colSpan={10}>Nobody on this day</EmptyRow>
+                    ) : (
+                      countRows.map((row, i) => (
+                        <tr key={row.sewadarId}>
+                          <td>{countPage.page * PAGE_SIZE + i + 1}</td>
+                          <td>{row.badgeNumber}</td>
+                          <td>{row.name}</td>
+                          <td>{row.mobile || '-'}</td>
+                          <td>{row.age ?? '-'}</td>
+                          <td>{row.zoneName || '-'}</td>
+                          <td>{row.area || '-'}</td>
+                          <td>
+                            <strong>{row.tokenNo}</strong>
+                          </td>
+                          <td>{prettyTime(row.checkInTime)}</td>
+                          <td>{prettyTime(row.checkOutTime)}</td>
+                          <td className="col-fill" />
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+                <Pager
+                  page={countPage.page}
+                  totalPages={countPage.totalPages}
+                  totalElements={countPage.totalElements}
+                  onChange={(next) => {
+                    const [action, gender] = openCount.split('-')
+                    openCountDetail(action, gender, next)
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
       {selected && (
         <div className="card">

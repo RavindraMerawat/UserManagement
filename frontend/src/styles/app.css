@@ -2915,7 +2915,20 @@ tr.row-picked td {
  * its own narrower, stretching columns, which is why a female login's two cards
  * filled the row where the dashboard's two would not have.
  */
+/*
+ * Sized by the dashboard's rule above, but ranged left rather than centred.
+ *
+ * On the dashboard the cards are the whole of the screen and centring them reads
+ * as deliberate. Here they sit above a full-width search panel and a results
+ * table, and a short centred row above a left-aligned page looks like a mistake -
+ * the left edge of the cards should be the left edge of everything under them.
+ */
 .badge-stats {
+  justify-content: start;
+  /* `margin: 0 auto` above is what centres the row; this undoes it and leaves the
+     max-width alone, so four to a row still holds. */
+  margin-left: 0;
+  margin-right: 0;
   margin-bottom: 20px;
 }
 

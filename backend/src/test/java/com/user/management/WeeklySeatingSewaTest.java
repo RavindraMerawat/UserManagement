@@ -16,6 +16,7 @@ import com.user.management.model.SeatingDaySummary;
 import com.user.management.model.SeatingPersonResponse;
 import com.user.management.model.WeeklySeatingSewaRequest;
 import com.user.management.model.WeeklySeatingSewaResponse;
+import com.user.management.model.AttendanceRequest;
 import com.user.management.repository.AttendanceRepository;
 import com.user.management.repository.SewadarRepository;
 import com.user.management.repository.SewadarRoleRepository;
@@ -38,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Set;
 
@@ -56,6 +58,7 @@ class WeeklySeatingSewaTest {
     @Autowired WeeklySeatingSewaService service;
     @Autowired WeeklySeatingSewaRepository repository;
     @Autowired AttendanceRepository attendanceRepository;
+    @Autowired com.user.management.service.AttendanceService attendanceService;
     @Autowired SewadarRepository sewadarRepository;
     @Autowired SewadarRoleRepository sewadarRoleRepository;
     @Autowired ZoneRepository zoneRepository;
@@ -258,6 +261,58 @@ class WeeklySeatingSewaTest {
         assertThat(repository.count()).isZero();
         assertThat(attendanceRepository.findBySewadarIdAndAttendanceDateAndSewaType(
                 first.getId(), LAST_SUNDAY, SewaType.WEEKLY_SEWA)).isPresent();
+    }
+
+    @Test
+    @DisplayName("the grid carries the day's check in and check out")
+    void theGridCarriesTheTimes() {
+        service.record(new WeeklySeatingSewaRequest(
+                first.getId(), LAST_SUNDAY, WeekDay.SUNDAY, "T-030", BadgeAction.ISSUE));
+
+        SeatingPersonResponse afterIssue = onlyRow(BadgeAction.ISSUE);
+        // The badge going out is the check in; it has not come back yet.
+        assertThat(afterIssue.checkInTime()).isNotNull();
+        assertThat(afterIssue.checkOutTime()).isNull();
+
+        service.record(new WeeklySeatingSewaRequest(
+                first.getId(), LAST_SUNDAY, WeekDay.SUNDAY, "T-030", BadgeAction.RECEIVE));
+
+        SeatingPersonResponse afterReceive = onlyRow(BadgeAction.ISSUE);
+        assertThat(afterReceive.checkInTime()).isEqualTo(afterIssue.checkInTime());
+        assertThat(afterReceive.checkOutTime()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("the times are this desk's own, not whatever else the day holds")
+    void otherAttendanceDoesNotReachThisGrid() {
+        /*
+         * The office asked for *the weekly seating's* check in and check out in this
+         * list, not the person's attendance at large. Somebody who sat on Sunday and
+         * was also marked present for another sewa the same day has two pairs of
+         * times, and only the seating desk's pair belongs on the seating desk's
+         * screen.
+         */
+        service.record(new WeeklySeatingSewaRequest(
+                first.getId(), LAST_SUNDAY, WeekDay.SUNDAY, "T-031", BadgeAction.ISSUE));
+        LocalTime seatingCheckIn = onlyRow(BadgeAction.ISSUE).checkInTime();
+
+        attendanceService.mark(new AttendanceRequest(
+                first.getId(), LAST_SUNDAY, SewaType.DAILY_SEWA, AttendanceStatus.PRESENT,
+                LocalTime.of(5, 0), LocalTime.of(6, 0), null, "Some other sewa"));
+
+        SeatingPersonResponse row = onlyRow(BadgeAction.ISSUE);
+        assertThat(row.checkInTime()).isEqualTo(seatingCheckIn);
+        assertThat(row.checkInTime()).isNotEqualTo(LocalTime.of(5, 0));
+        assertThat(row.checkOutTime()).isNull();
+    }
+
+    /** The one person in the day's list, for the assertions above. */
+    private SeatingPersonResponse onlyRow(BadgeAction action) {
+        return service.dayMovements(LAST_SUNDAY, action, null, PageRequest.of(0, 20))
+                .content().stream()
+                .filter(r -> first.getBadgeNumber().equals(r.badgeNumber()))
+                .findFirst()
+                .orElseThrow();
     }
 
     // ------------------------------------------------------------------ helpers
