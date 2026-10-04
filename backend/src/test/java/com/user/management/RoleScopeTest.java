@@ -94,7 +94,7 @@ class RoleScopeTest {
         assertThat(sewadars.content()).extracting(SewadarResponse::badgeNumber)
                 .containsExactlyInAnyOrder("N-001", "S-001");
 
-        assertThat(attendanceService.search(null, null, null, null, null, null, attendancePage()).content())
+        assertThat(attendanceService.search(null, null, null, null, null, null, null, attendancePage()).content())
                 .hasSize(2);
     }
 
@@ -118,7 +118,7 @@ class RoleScopeTest {
                 .extracting(SewadarResponse::badgeNumber)
                 .containsExactly("N-001");
 
-        assertThat(attendanceService.search(null, null, null, null, null, null, attendancePage()).content())
+        assertThat(attendanceService.search(null, null, null, null, null, null, null, attendancePage()).content())
                 .hasSize(1);
 
         // Reaching into another zone is refused rather than silently returning nothing.
@@ -171,11 +171,11 @@ class RoleScopeTest {
         List<SewadarResponse> visible = sewadarService.search(null, null, null, null, null, page()).content();
         assertThat(visible).extracting(SewadarResponse::badgeNumber).containsExactly("N-001");
 
-        assertThat(attendanceService.search(null, null, null, null, null, null, attendancePage()).content())
+        assertThat(attendanceService.search(null, null, null, null, null, null, null, attendancePage()).content())
                 .hasSize(1);
 
         assertThatThrownBy(() -> attendanceService.search(southSewadar.getId(), null, null, null,
-                null, null, attendancePage()))
+                null, null, null, attendancePage()))
                 .hasMessageContaining("only view your own attendance");
 
         assertThatThrownBy(() -> sewadarService.get(southSewadar.getId()))

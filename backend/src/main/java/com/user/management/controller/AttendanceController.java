@@ -58,12 +58,15 @@ public class AttendanceController {
             @RequestParam(required = false) AttendanceStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "GR. No, name or mobile number - whichever is to hand")
+            @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
 
         Pageable pageable = PageRequest.of(page, Math.min(size, 200),
                 Sort.by(Sort.Direction.DESC, "attendanceDate").and(Sort.by("id")));
-        return attendanceService.search(sewadarId, zoneId, sewaType, status, fromDate, toDate, pageable);
+        return attendanceService.search(sewadarId, zoneId, sewaType, status, fromDate, toDate,
+                query, pageable);
     }
 
     @Operation(summary = "My own attendance for a date range", description = "For a Sewadar login.")

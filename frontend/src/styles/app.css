@@ -3726,3 +3726,34 @@ tr.row-picked td {
     white-space: nowrap;
   }
 }
+
+/*
+ * Hour, minute and AM/PM, reading as one control rather than three boxes.
+ *
+ * The office says "4:51 pm" and now picks it that way; `<input type="time">`
+ * showed a 24 hour clock or a 12 hour one depending on the machine's locale and
+ * could not be told which to be.
+ */
+.time12 {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* The three sit in a form column sized for one box, so they wrap rather than
+     run under whatever is beside them. */
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.time12 select {
+  /* Narrow enough for three across a single field; a select will not shrink
+     below its content without this. */
+  min-width: 0;
+  width: auto;
+  padding-left: 8px;
+  padding-right: 4px;
+}
+
+.time12-sep {
+  color: var(--ink-soft);
+  font-weight: 600;
+}

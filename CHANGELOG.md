@@ -3482,6 +3482,69 @@ lines back and both fail. On live after the repair: Annual Satsang reads 1 / 1 /
 
 ---
 
+## 47. Find the person, and read the clock the way the office says it
+
+Asked for: *"In All Attendance Record I want to search by badge no, name, mobile no,
+and this search option add first, then search user. And in Manage Past Attendance I
+want AM and PM option, not 24 hours."*
+
+### One box over the three things that identify somebody
+
+All Attendance Record had a date range, a zone, a sewa type and a status - every way
+of narrowing the list except the one the screen is opened for. Somebody is at the
+desk saying their Tuesday is wrong, and the office had to know the date before they
+could find them.
+
+There is a search now, and it is the **first** thing on the screen, above the
+filters, because looking one person up is the job and the dates narrow whatever it
+finds. One box over GR. No, name and mobile, since which of the three is to hand
+varies - the badge in their hand, the name they give, or the number the office has.
+Partial text works, case does not matter, and it runs on Enter or the button rather
+than on every keystroke.
+
+It narrows the other filters rather than replacing them: searching "bina" inside a
+date range still means *Bina, in those dates*.
+
+### AM and PM
+
+`<input type="time">` looks like a 24 hour box or a 12 hour one depending on the
+machine's locale, and **cannot be told which to be** - there is no attribute for it.
+The office reads a clock the way they say it, "4:51 pm", so Manage Past Attendance
+now has three plain dropdowns instead: hour, minute, AM/PM. They say the same thing
+on every machine in the office.
+
+What leaves the control is unchanged - `HH:mm` on the 24 hour clock, which is what
+the server stores and what the old input produced. Nothing downstream knows the
+difference.
+
+Picking an hour sets the minutes to `00` and the half of the day to `AM` rather than
+leaving a half-made time that silently will not save; both are on screen and can be
+changed. A time with no hour stays empty, so "no check out yet" is still expressible.
+
+### Verified
+
+`AttendanceSearchTest`, seven cases: by GR. No, by name - including a fragment that
+matches two different people - by mobile, case and spaces, no search meaning no
+filter rather than an empty screen, a search matching nobody giving nothing rather
+than everything, and the search combining with the status and date filters. Drop the
+search term on the way to the query and six of the seven fail.
+
+In a browser: the search panel sits above Filters, "bina" takes the grid from two
+rows to one. On Manage Past Attendance, picking **09:15 AM** and **04:51 PM** and
+saving produced the confirmation *"checked in at 09:15 AM and checked out at 04:51 PM
+(07h 36m)"* and the server stored `09:15:00` and `16:51:00` - the conversion is
+right. On live after deploy, a GR. No search returns its one record out of 107.
+Suite: **202 tests, all passing**.
+
+### Still on the browser's clock
+
+Mark Attendance, Zone Attendance and the inline edit on All Attendance Record still
+use `<input type="time">`, so they read 24 hour or 12 hour depending on the machine.
+Only Manage Past Attendance was asked for and only it was changed; the control is
+reusable and the other three are a one line change each if the office wants them.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.

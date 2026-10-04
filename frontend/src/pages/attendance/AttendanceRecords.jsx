@@ -36,6 +36,14 @@ export default function AttendanceRecords({
     sewaType: '',
     status: '',
   })
+  /*
+   * The box at the top is a draft until Search is pressed; `query` is what the
+   * server has been asked for. Keeping the two apart means a half typed GR. No
+   * does not fetch a page per keystroke, and the grid still shows the result of
+   * the last search while the next one is being typed.
+   */
+  const [draft, setDraft] = useState('')
+  const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -50,10 +58,11 @@ export default function AttendanceRecords({
       zoneId: filters.zoneId || undefined,
       sewaType: filters.sewaType || undefined,
       status: filters.status || undefined,
+      query: query || undefined,
       page,
       size: PAGE_SIZE,
     }),
-    [filters, page],
+    [filters, query, page],
   )
 
   const load = useCallback(() => {
@@ -110,8 +119,50 @@ export default function AttendanceRecords({
 
   const cols = 10 + (!isSewadar ? 1 : 0) + (canEdit || canDelete ? 1 : 0)
 
+  const runSearch = (event) => {
+    event.preventDefault()
+    setPage(0)
+    setQuery(draft.trim())
+  }
+
+  const clearSearch = () => {
+    setPage(0)
+    setDraft('')
+    setQuery('')
+  }
+
   return (
     <div>
+      {/*
+        The search comes first, because looking one person up is what this screen
+        is opened for; the date and zone filters below narrow whatever it finds.
+      */}
+      <section className="panel">
+        <header className="panel-head">
+          <h2>Find a sewadar</h2>
+        </header>
+        <form className="cs-lookup" onSubmit={runSearch}>
+          <Field label="GR. No, Name or Mobile No">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type and press Enter, or use Search"
+            />
+          </Field>
+          <button type="submit" className="btn" disabled={loading}>
+            {loading ? 'Searching...' : 'Search'}
+          </button>
+          <button type="button" className="btn ghost" onClick={clearSearch} disabled={!draft && !query}>
+            Reset
+          </button>
+        </form>
+        {query && (
+          <p className="hint">
+            Showing attendance for &ldquo;{query}&rdquo;. Reset to see everybody again.
+          </p>
+        )}
+      </section>
+
       <section className="panel">
         <header className="panel-head">
           <h2>Filters</h2>

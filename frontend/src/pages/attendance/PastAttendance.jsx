@@ -15,7 +15,7 @@ import { errorMessage } from '../../api/client'
 import Alert from '../../components/Alert'
 import Spinner from '../../components/Spinner'
 import { Avatar } from '../../components/Photo'
-import { Badge, EmptyRow } from '../../components/Bits'
+import { Badge, EmptyRow, TimeInput12 } from '../../components/Bits'
 import { fromIso, prettyDate, todayIso, yesterdayIso } from '../../dates'
 import { PAGE_SIZE } from '../../pageSize'
 
@@ -465,12 +465,11 @@ export default function PastAttendance({ sewaTypes, sewaType: initialSewaType, o
                     Check In Time <span className="req">*</span>
                   </label>
                   <div className="bd-time">
-                    <input
+                    <TimeInput12
                       id="past-in"
-                      type="time"
                       value={inTime}
                       disabled={selected.checkedIn}
-                      onChange={(e) => setInTime(e.target.value)}
+                      onChange={setInTime}
                     />
                   </div>
                   {selected.checkedIn && <span className="bd-hint">Already recorded</span>}
@@ -484,12 +483,11 @@ export default function PastAttendance({ sewaTypes, sewaType: initialSewaType, o
                       a day with no arrival - so the field waits until there is one,
                       either already recorded or typed in above.
                     */}
-                    <input
+                    <TimeInput12
                       id="past-out"
-                      type="time"
                       value={outTime}
                       disabled={selected.checkedOut || !(selected.checkedIn || inTime)}
-                      onChange={(e) => setOutTime(e.target.value)}
+                      onChange={setOutTime}
                     />
                   </div>
                   <span className="bd-hint">

@@ -114,3 +114,82 @@ export function Field({ label, required, children, wide }) {
     </div>
   )
 }
+
+/**
+ * A clock reading in hours, minutes and AM/PM.
+ *
+ * <p>`<input type="time">` looks like a 24 hour box or a 12 hour one depending on
+ * the machine's locale, and the office reads the clock the way they say it - "4:51
+ * pm", not "16:51". A native input cannot be told which to be, so this is three
+ * plain selects instead. They say the same thing on every machine.</p>
+ *
+ * <p>The value in and out is still `HH:mm` on the 24 hour clock, which is what the
+ * server stores and what the old input produced - nothing downstream changed.</p>
+ */
+export function TimeInput12({ id, value, disabled, onChange }) {
+  // "" until all three are set, so a half-made time is never sent as a whole one.
+  const [h24, minute] = (value || '').split(':')
+  const hour24 = h24 === undefined || h24 === '' ? null : Number(h24)
+
+  const meridiem = hour24 === null ? '' : hour24 < 12 ? 'AM' : 'PM'
+  const hour12 =
+    hour24 === null ? '' : String(hour24 % 12 === 0 ? 12 : hour24 % 12).padStart(2, '0')
+  const mins = minute ?? ''
+
+  /** Back to the 24 hour clock, which is the only form that leaves this component. */
+  const emit = (nextHour12, nextMinute, nextMeridiem) => {
+    if (!nextHour12 || !nextMeridiem) {
+      onChange('')
+      return
+    }
+    const h = Number(nextHour12) % 12 + (nextMeridiem === 'PM' ? 12 : 0)
+    onChange(`${String(h).padStart(2, '0')}:${(nextMinute || '00').padStart(2, '0')}`)
+  }
+
+  // Picking an hour alone is a complete thought - "three o'clock" - so the minutes
+  // and the half of the day take a sensible value rather than blocking the save.
+  const pickHour = (next) => emit(next, mins || '00', meridiem || 'AM')
+
+  return (
+    <span className="time12">
+      <select
+        id={id}
+        aria-label="Hour"
+        value={hour12}
+        disabled={disabled}
+        onChange={(e) => pickHour(e.target.value)}
+      >
+        <option value="">--</option>
+        {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map((h) => (
+          <option key={h} value={h}>
+            {h}
+          </option>
+        ))}
+      </select>
+      <span className="time12-sep">:</span>
+      <select
+        aria-label="Minute"
+        value={mins}
+        disabled={disabled || !hour12}
+        onChange={(e) => emit(hour12, e.target.value, meridiem || 'AM')}
+      >
+        <option value="">--</option>
+        {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label="AM or PM"
+        value={meridiem}
+        disabled={disabled || !hour12}
+        onChange={(e) => emit(hour12, mins || '00', e.target.value)}
+      >
+        <option value="">--</option>
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </span>
+  )
+}

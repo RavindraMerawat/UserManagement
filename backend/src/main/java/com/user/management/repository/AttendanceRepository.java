@@ -51,6 +51,10 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
      * Paged attendance listing. Every filter is optional; {@code zoneIds} and
      * {@code sewadarScopeId} carry the caller's data scope and are applied on top of
      * the user supplied filters.
+     *
+     * <p>{@code q} is the office's one box over GR. No, name and mobile - whichever
+     * of the three is to hand when somebody is standing at the desk. It narrows the
+     * same list the date and zone filters narrow rather than replacing them.</p>
      */
     @Query("""
             select a from Attendance a
@@ -63,6 +67,9 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
               and (:status is null or a.status = :status)
               and (:from is null or a.attendanceDate >= :from)
               and (:to is null or a.attendanceDate <= :to)
+              and (:q is null or (lower(a.sewadar.badgeNumber) like %:q%
+                   or lower(a.sewadar.name) like %:q%
+                   or lower(coalesce(a.sewadar.mobile, '')) like %:q%))
             """)
     Page<Attendance> search(@Param("sewadarId") Long sewadarId,
                             @Param("zoneId") Long zoneId,
@@ -70,6 +77,7 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                             @Param("status") AttendanceStatus status,
                             @Param("from") LocalDate from,
                             @Param("to") LocalDate to,
+                            @Param("q") String q,
                             @Param("zoneIds") Collection<Long> zoneIds,
                             @Param("scopeGender") Gender scopeGender,
                             @Param("sewadarScopeId") Long sewadarScopeId,

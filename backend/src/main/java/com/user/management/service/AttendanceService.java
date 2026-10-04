@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -42,6 +43,7 @@ public class AttendanceService {
                                                    AttendanceStatus status,
                                                    LocalDate from,
                                                    LocalDate to,
+                                                   String query,
                                                    Pageable pageable) {
         DataScope scope = currentUser.scope();
         if (zoneId != null) {
@@ -52,6 +54,7 @@ public class AttendanceService {
         }
         return PageResponse.of(
                 attendanceRepository.search(sewadarId, zoneId, sewaType, status, from, to,
+                        StringUtils.hasText(query) ? query.trim().toLowerCase() : null,
                         scope.zoneIds(), scope.gender(), scope.sewadarId(), pageable),
                 AttendanceResponse::from);
     }

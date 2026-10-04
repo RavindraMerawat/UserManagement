@@ -146,7 +146,7 @@ public class DashboardService {
         List<DashboardResponse.MonthlyAttendancePoint> monthly = monthlyAttendance(today, scope);
 
         List<AttendanceResponse> recent = attendanceRepository.search(
-                        null, null, null, null, null, null,
+                        null, null, null, null, null, null, null,
                         scope.zoneIds(), scope.gender(), scope.sewadarId(),
                         PageRequest.of(0, 8, Sort.by(Sort.Direction.DESC, "attendanceDate", "id")))
                 .getContent().stream()
