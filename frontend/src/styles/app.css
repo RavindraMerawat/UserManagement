@@ -285,7 +285,10 @@ textarea {
   display: grid;
   grid-template-columns: 170px 130px 120px;
   gap: 10px;
-  align-items: end;
+  /* Top, not bottom: the three labels are one line each, and aligning on the
+     bottom edge lifted Badge No out of the row as soon as it grew a hint under
+     it. */
+  align-items: start;
 }
 
 .ws-entry .field {
@@ -3756,4 +3759,14 @@ tr.row-picked td {
 .time12-sep {
   color: var(--ink-soft);
   font-weight: 600;
+}
+
+/*
+ * A field that is filled in for you and not yours to change - the badge number on
+ * a day whose badge has already gone out. Quieter than an editable box, but not
+ * greyed out like a disabled one: the value matters and is meant to be read.
+ */
+input[readonly] {
+  background: var(--surface-soft, #f6f7f9);
+  cursor: default;
 }

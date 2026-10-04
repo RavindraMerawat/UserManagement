@@ -3545,6 +3545,54 @@ reusable and the other three are a one line change each if the office wants them
 
 ---
 
+## 48. The badge number was already on file
+
+Reported: *"I am facing issue in receive badge because receive badge button is not
+enable, so please auto fetch badge No - if badge no is auto filled then button is
+enabled by default."*
+
+### Asking for something it already knew
+
+Change set 42 made *Receive Badge* wait until a badge had gone out, which was right.
+What it did not do was fill in the number. Both buttons need a badge number before
+either means anything, so the office opened a sewadar whose badge was already out,
+saw *"Issued 11:44 AM"* written under the buttons, and still had to read the number
+off the screen and key it back in before Receive would light up.
+
+The number is on the day's record - it is what was typed when the badge went out.
+So the box is filled from it: open somebody whose badge is out and **Receive Badge
+is live straight away**, with no typing at all. Move the date to a day with no
+seating and the box empties again, ready for a new number.
+
+### And it is not a field to edit
+
+Once the badge has gone out, the number is the one written on the badge in their
+hand. Changing it in the box would take back a different badge, so while a badge is
+out the field is read-only and says what it is - *"The badge they were given on this
+day"*. On a day with nothing recorded it is an ordinary box.
+
+The fill depends on the day's record, the person and the date, never on the box
+itself, so it fills once and then leaves a half typed number alone.
+
+### A row that came apart
+
+The three fields were aligned on their bottom edges, which was fine while each was a
+label over a box. The new hint under Badge No made that field taller and lifted it
+out of the row - its label sat 40px above the other two. Aligned at the top now,
+where three one-line labels belong, and the hint hangs below without moving
+anything.
+
+### Verified
+
+In a browser, one sewadar through four states. Badge already out, nothing typed:
+number **214**, read-only, Issue off, **Receive on** - the reported case, working.
+Pressing Receive: both off, *"Badge No 214 received from Sunita Merawat"*. A fresh
+Thursday with no seating: box empty and typeable, both off. Typing 330 there: Issue
+on, Receive still off. The three labels sit on one line again. Backend untouched -
+suite unchanged at **202 tests, all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.

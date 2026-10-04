@@ -268,6 +268,27 @@ export default function WeeklySeatingSewa() {
    * offering what has been done.
    */
   const dayRow = rows.find((row) => row.sewaDate === sewaDate) || null
+
+  /*
+   * A badge that is already out has a number, and it is not one to be typed again.
+   *
+   * Receiving needs the same number it went out under, and the office was being
+   * asked to read it off the screen and key it back in before the button would
+   * light up - with the record of it sitting right there. So the box is filled from
+   * the day's own row, and emptied again when the date moves to a day that has
+   * none.
+   *
+   * It depends on the row, the person and the date, never on the box itself, so it
+   * fills once and then leaves a half typed number alone.
+   */
+  useEffect(() => {
+    setTokenNo(dayRow?.tokenNo || '')
+  }, [dayRow?.id, dayRow?.tokenNo, selected?.id, sewaDate])
+
+  // The number is the badge's, not a field to edit: once it has gone out, changing
+  // it here would take back a different badge from the one in their hand.
+  const tokenIsFixed = Boolean(dayRow?.badgeIssued && dayRow?.tokenNo)
+
   // What both buttons need before either can mean anything: a day, a badge number
   // and no save already running.
   const canRecord = !acting && Boolean(weekDay) && Boolean(tokenNo.trim())
@@ -456,8 +477,12 @@ export default function WeeklySeatingSewa() {
                       value={tokenNo}
                       onChange={(e) => setTokenNo(e.target.value.slice(0, 40))}
                       placeholder="T-014"
+                      readOnly={tokenIsFixed}
                       required
                     />
+                    {tokenIsFixed && (
+                      <span className="hint">The badge they were given on this day</span>
+                    )}
                   </Field>
 
                 </div>
