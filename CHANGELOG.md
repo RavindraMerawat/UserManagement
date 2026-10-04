@@ -3420,6 +3420,68 @@ all passing**.
 
 ---
 
+## 46. Two badges, one pair of flags
+
+Reported: *"Weekly Seating Sewa and Annual Satsang Sewa are different, so why is the
+weekly count shown on Annual Satsang Sewa?"*
+
+### The weekly desk was writing the annual badge
+
+`WeeklySeatingSewaService.record` set two things it had no business setting:
+
+```java
+sewadar.setBadgeIssued(true);    // ...and on receive, setBadgeReceived(true)
+```
+
+`sewadars.badgeIssued` is the **annual satsang** badge - a different badge, for a
+different event, counted on a different tab. The weekly badge already had its own
+record, on its own row, dated. So every Sunday seating moved somebody from Pending to
+Issued on the Annual Satsang cards, and this Sunday moved thirty-five people at once.
+
+The count was the half the office could see. The other half was worse: `issueBadge`
+refuses a badge that is already issued, so every one of those thirty-five had been
+quietly locked out of the annual badge they had not been given - *"Badge has already
+been issued to this sewadar"* - and the only way back was the database.
+
+Two badges, two records. The weekly flags stay on the seating row; the sewadar's stay
+for the annual one.
+
+### The register was put back
+
+Thirty-six rows carried an annual badge that nobody had issued. The seating table
+told us which: every one of the thirty-six had a seating row, thirty-five from this
+Sunday and one from the Thursday before.
+
+Thirty-five were cleared - `badgeIssued = 0` where the badge was issued, never
+received, and the sewadar had sat at the weekly desk - taking the Annual Satsang
+cards from *36 issued / 3 015 pending* back to *1 / 3 004*, which is where they
+stood before the seatings began. The `sewadars` table was dumped first
+(`sewadars-20261004-024958.sql.gz`), and **no seating record was touched** - the
+weekly list still shows all thirty-five, with their tokens and times.
+
+The thirty-sixth was left alone and is flagged for the office rather than guessed at:
+L04560 Vinita Chelani, seated on 1 October, whose annual badge was afterwards marked
+**received** by somebody. The *issued* flag under it came from the seating, but the
+receipt was a deliberate action and is not ours to erase.
+
+### The order of the repair
+
+The fix shipped before the data was touched, on purpose. The office was at the desk
+while this was being read - the count went 23, then 33, then 36 across three
+readings - so clearing the rows first would have been clearing them underneath a
+service that was still setting them.
+
+### Verified
+
+Two cases in `WeeklySeatingSewaTest`: a seating issued and received leaves
+`sewadars.badgeIssued` and `badgeReceived` false while the seating row carries both,
+and the annual badge can still be issued to somebody who sat on Sunday. Put the two
+lines back and both fail. On live after the repair: Annual Satsang reads 1 / 1 /
+3 004, the weekly day list still holds its thirty-five, and the register is still
+3 005. Suite: **195 tests, all passing**.
+
+---
+
 ## Known limitations
 
 1. ~~`ddl-auto=update` generates the schema~~ - **fixed in change set 14**.

@@ -107,10 +107,22 @@ public class WeeklySeatingSewaService {
         // a badge handed over and taken back inside the same minute is unusual but
         // not impossible.
         LocalTime now = LocalTime.now().withNano(0);
+        /*
+         * The flags written here are the seating row's own, for this one day.
+         *
+         * They used to be written to the sewadar as well, and `sewadars.badgeIssued`
+         * is the *annual satsang* badge - a different badge, counted on a different
+         * tab. So a Sunday seating moved somebody from Pending to Issued on the
+         * Annual Satsang cards, and the office saw a number climb for an event that
+         * had not happened. It also locked them out of the annual badge, which
+         * refuses to issue one that is already issued.
+         *
+         * Two badges, two records: the weekly one lives on this row, dated, and the
+         * annual one on the sewadar.
+         */
         if (request.action() == BadgeAction.ISSUE) {
             row.setBadgeIssued(true);
             row.setIssuedAt(now);
-            sewadar.setBadgeIssued(true);
         } else {
             if (!row.isBadgeIssued()) {
                 throw new BadRequestException("Badge No " + token + " has not been issued to "
@@ -119,9 +131,7 @@ public class WeeklySeatingSewaService {
             }
             row.setBadgeReceived(true);
             row.setReceivedAt(now);
-            sewadar.setBadgeReceived(true);
         }
-        sewadarRepository.save(sewadar);
         WeeklySeatingSewa saved = repository.save(row);
 
         /*

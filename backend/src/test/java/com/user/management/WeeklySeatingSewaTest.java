@@ -6,6 +6,7 @@ import com.user.management.entity.Gender;
 import com.user.management.entity.Role;
 import com.user.management.entity.SewaType;
 import com.user.management.entity.Sewadar;
+import com.user.management.entity.WeeklySeatingSewa;
 import com.user.management.entity.SewadarRole;
 import com.user.management.entity.User;
 import com.user.management.entity.WeekDay;
@@ -56,6 +57,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class WeeklySeatingSewaTest {
 
     @Autowired WeeklySeatingSewaService service;
+    @Autowired com.user.management.service.SewadarService sewadarService;
     @Autowired WeeklySeatingSewaRepository repository;
     @Autowired AttendanceRepository attendanceRepository;
     @Autowired com.user.management.service.AttendanceService attendanceService;
@@ -304,6 +306,47 @@ class WeeklySeatingSewaTest {
         assertThat(row.checkInTime()).isEqualTo(seatingCheckIn);
         assertThat(row.checkInTime()).isNotEqualTo(LocalTime.of(5, 0));
         assertThat(row.checkOutTime()).isNull();
+    }
+
+    @Test
+    @DisplayName("a weekly seating leaves the annual satsang badge alone")
+    void theWeeklyBadgeIsNotTheAnnualBadge() {
+        /*
+         * Two badges, two tabs. `sewadars.badgeIssued` is the annual satsang badge
+         * and is what the Annual Satsang Sewa cards count; the weekly badge is the
+         * one on the seating row, dated. Writing the first from the second made a
+         * Sunday seating move 23 people from Pending to Issued on an event that had
+         * not happened, and the office reported the number.
+         */
+        assertThat(first.isBadgeIssued()).isFalse();
+
+        service.record(new WeeklySeatingSewaRequest(
+                first.getId(), LAST_SUNDAY, WeekDay.SUNDAY, "T-040", BadgeAction.ISSUE));
+        service.record(new WeeklySeatingSewaRequest(
+                first.getId(), LAST_SUNDAY, WeekDay.SUNDAY, "T-040", BadgeAction.RECEIVE));
+
+        Sewadar after = sewadarRepository.findById(first.getId()).orElseThrow();
+        assertThat(after.isBadgeIssued()).isFalse();
+        assertThat(after.isBadgeReceived()).isFalse();
+
+        // The weekly badge did happen, and is recorded where it belongs.
+        WeeklySeatingSewa seating = repository
+                .findBySewadarIdAndSewaDate(first.getId(), LAST_SUNDAY).orElseThrow();
+        assertThat(seating.isBadgeIssued()).isTrue();
+        assertThat(seating.isBadgeReceived()).isTrue();
+    }
+
+    @Test
+    @DisplayName("the annual badge can still be issued to somebody who sat on Sunday")
+    void sittingOnSundayDoesNotLockTheAnnualBadge() {
+        // The other half of the same bug: issueBadge refuses a badge that is already
+        // issued, so a seated sewadar could not be given their annual one at all.
+        service.record(new WeeklySeatingSewaRequest(
+                first.getId(), LAST_SUNDAY, WeekDay.SUNDAY, "T-041", BadgeAction.ISSUE));
+
+        sewadarService.issueBadge(first.getId());
+
+        assertThat(sewadarRepository.findById(first.getId()).orElseThrow().isBadgeIssued()).isTrue();
     }
 
     /** The one person in the day's list, for the assertions above. */
